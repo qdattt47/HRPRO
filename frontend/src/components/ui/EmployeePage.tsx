@@ -118,7 +118,13 @@ export default function EmployeePage() {
   const ensureEmployeeSchema = (employees: LegacyEmployee[]) => {
     const departments = loadStoredDepartments();
     const positions = loadStoredPositions();
-    return normalizeEmployeesJoinOrder(employees).map((emp, index) => {
+    const normalizedInput = normalizeEmployeesJoinOrder(
+      employees.map((emp) => ({
+        ...emp,
+        code: emp.code ?? "",
+      })) as Array<LegacyEmployee & { code: string }>
+    );
+    return normalizedInput.map((emp, index) => {
       const now = new Date().toISOString();
       const deptRecord = departments.find((dept) => dept.tenPhong === emp.dept);
       const posRecord = positions.find((pos) => pos.tenChucVu === emp.position);
@@ -352,6 +358,7 @@ export default function EmployeePage() {
           positions.find((pos) => pos.tenChucVu === updatedData.position)?.id ??
           emp.positionId ??
           null;
+        const resolvedPassword = updatedData.matKhau || emp.matKhau;
         return {
           ...emp,
           code: nextCode,
@@ -363,9 +370,10 @@ export default function EmployeePage() {
           baseSalary: updatedData.baseSalary,
           status: updatedData.status,
           taiKhoan: updatedData.taiKhoan,
-          matKhau: updatedData.matKhau,
+          matKhau: resolvedPassword,
           account: updatedData.taiKhoan,
-          password: updatedData.matKhau,
+          password: resolvedPassword,
+          photo: updatedData.photo ?? emp.photo,
           joinedAt: new Date(updatedData.joinedAt).toISOString(),
           joinOrder,
           updatedAt: new Date().toISOString(),

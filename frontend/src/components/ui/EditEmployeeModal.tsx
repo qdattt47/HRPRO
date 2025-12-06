@@ -14,6 +14,7 @@ export type EmployeeEditData = {
   departmentId?: string | null;
   position: string;
   positionId?: string | null;
+  photo?: string | null;
   baseSalary: number;
   status: "active" | "inactive";
   taiKhoan: string;
@@ -80,6 +81,7 @@ export function EditEmployeeModal({
     departmentId: null,
     position: '',
     positionId: null,
+    photo: null,
     baseSalary: 0,
     status: 'active',
     taiKhoan: '',
@@ -98,6 +100,7 @@ export function EditEmployeeModal({
         position: employee.position,
         departmentId: employee.departmentId ?? null,
         positionId: employee.positionId ?? null,
+        photo: employee.photo ?? null,
         baseSalary: employee.baseSalary,
         code: employee.code,
         status: employee.status,

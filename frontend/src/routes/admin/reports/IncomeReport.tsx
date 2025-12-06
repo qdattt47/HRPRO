@@ -1,24 +1,36 @@
 
-import { BarChart } from "@/components/charts/BarChart";
+import BarChart from "@/components/charts/BarChart";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import Card from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { Table } from "@/components/ui/Table";
-import { formatMoney } from "@/lib/money";
+import Table from "@/components/ui/Table";
+import { formatCurrency } from "@/lib/money";
 import { useMemo, useState } from "react";
+
+type IncomeRow = {
+  month: number;
+  basicSalary: number;
+  netSalary: number;
+  difference: number;
+};
 
 const IncomeReport = () => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [employee, setEmployee] = useState<string | null>(null);
 
-  const data = useMemo(() => {
+  const data = useMemo<IncomeRow[]>(() => {
     if (!employee) return [];
-    return Array.from({ length: 12 }, (_, i) => ({
-      month: i + 1,
-      basicSalary: 5000000,
-      netSalary: Math.random() * 10000000,
-    }));
+    return Array.from({ length: 12 }, (_, i) => {
+      const basicSalary = 5000000;
+      const netSalary = basicSalary + Math.random() * 5000000;
+      return {
+        month: i + 1,
+        basicSalary,
+        netSalary,
+        difference: netSalary - basicSalary,
+      };
+    });
   }, [employee]);
 
   const totalIncome = useMemo(() => {
@@ -79,18 +91,18 @@ const IncomeReport = () => {
                   {
                     header: "Lương cơ bản",
                     accessor: "basicSalary",
-                    render: (row) => formatMoney(row.basicSalary),
+                    render: (row: IncomeRow) => formatCurrency(row.basicSalary),
                   },
                   {
                     header: "Lương thực nhận",
                     accessor: "netSalary",
-                    render: (row) => formatMoney(row.netSalary),
+                    render: (row: IncomeRow) => formatCurrency(row.netSalary),
                   },
                   {
                     header: "Chênh lệch",
                     accessor: "difference",
-                    render: (row) =>
-                      formatMoney(row.netSalary - row.basicSalary),
+                    render: (row: IncomeRow) =>
+                      formatCurrency(row.netSalary - row.basicSalary),
                   },
                 ]}
                 data={data}
@@ -103,13 +115,13 @@ const IncomeReport = () => {
                 Tổng thu nhập năm {year}
               </h2>
               <div className="space-y-2">
-                <p className="text-2xl font-bold">{formatMoney(totalIncome)}</p>
+                <p className="text-2xl font-bold">{formatCurrency(totalIncome)}</p>
                 <p
                   className={
                     incomeChange >= 0 ? "text-green-500" : "text-red-500"
                   }
                 >
-                  {incomeChange >= 0 ? "▲" : "▼"} {formatMoney(incomeChange)} so
+                  {incomeChange >= 0 ? "▲" : "▼"} {formatCurrency(incomeChange)} so
                   với năm trước
                 </p>
               </div>

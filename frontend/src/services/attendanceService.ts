@@ -82,9 +82,10 @@ const fallbackCheck = ({
   if (!match || bestDistance > threshold) {
     throw new Error('Không nhận diện được khuôn mặt trong cơ sở dữ liệu.');
   }
+  const confirmedMatch = match as FaceEmbeddingRow;
 
   return {
-    employeeId: match.employeeId,
+    employeeId: confirmedMatch.employeeId,
     type,
     timestamp: new Date().toISOString(),
     distance: bestDistance,
