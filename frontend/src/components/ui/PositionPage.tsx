@@ -8,6 +8,7 @@ import { Input } from "./Input";
 import type { Employee } from "./EmployeePage";
 import { EmployeesListModal } from "./EmployeesListModal";
 import { generatePositionShortCode } from "../../utils/employeeCode";
+import { positionsService, type PositionViewModel } from "../../services/positionsService";
 
 export type Position = {
   id: string;
@@ -83,6 +84,36 @@ export default function PositionPage() {
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const PAGE_SIZE = 4;
 
+  const updatePositions = (producer: (rows: Position[]) => Position[]) => {
+    setData((prev) => {
+      const next = producer(prev);
+      localStorage.setItem("positionsData", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const mergeRemotePositions = (remote: PositionViewModel[], current: Position[]) => {
+    const currentMap = current.reduce<Record<string, Position>>((acc, pos) => {
+      acc[pos.id] = pos;
+      acc[pos.maChucVu] = pos;
+      return acc;
+    }, {});
+    return remote.map((row) => {
+      const previous = currentMap[row.id] ?? currentMap[row.maChucVu];
+      return {
+        id: row.id,
+        maChucVu: row.maChucVu,
+        tenChucVu: row.tenChucVu,
+        moTa: row.moTa ?? previous?.moTa ?? "",
+        capDo: previous?.capDo ?? "STAFF",
+        quyenHan: previous?.quyenHan ?? [],
+        trangThai: previous?.trangThai ?? "active",
+        visible: row.visible,
+        soNhanSu: previous?.soNhanSu ?? 0,
+      };
+    });
+  };
+
   const filtered = useMemo(() => {
     const result = data.filter((d) => {
       if (q && !(d.tenChucVu.toLowerCase().includes(q.toLowerCase()) || d.maChucVu.toLowerCase().includes(q.toLowerCase())))
@@ -125,49 +156,112 @@ export default function PositionPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const synchronizePositions = async () => {
+      try {
+        const remote = await positionsService.list();
+        if (!active || !remote.length) return;
+        updatePositions((current) => mergeRemotePositions(remote, current));
+      } catch (error) {
+        console.warn("Không thể đồng bộ chức vụ từ Supabase:", error);
+      }
+    };
+    void synchronizePositions();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const generatePosCode = (name: string) => {
     return generatePositionShortCode(name) || "X";
   };
 
-  const addPosition = (pos: NewPositionData) => {
+  const addPosition = async (pos: NewPositionData) => {
     const finalCode = pos.maChucVu || generatePosCode(pos.tenChucVu);
-    const newPosition: Position = {
-      ...pos,
-      id: uuidv4(),
-      maChucVu: finalCode,
-      visible: true
+    const baseData = {
+      capDo: pos.capDo,
+      quyenHan: pos.quyenHan,
+      trangThai: pos.trangThai,
+      soNhanSu: 0,
     };
-    setData((s) => {
-      const next = [newPosition, ...s];
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
+    try {
+      const created = await positionsService.create({
+        maChucVu: finalCode,
+        tenChucVu: pos.tenChucVu,
+        moTa: pos.moTa,
+      });
+      const remotePosition: Position = {
+        id: created.id,
+        maChucVu: created.maChucVu,
+        tenChucVu: created.tenChucVu,
+        moTa: created.moTa ?? pos.moTa,
+        visible: created.visible,
+        ...baseData,
+      };
+      updatePositions((rows) => [remotePosition, ...rows.filter((row) => row.id !== remotePosition.id)]);
+    } catch (error) {
+      console.warn("Không thể lưu chức vụ lên Supabase, dùng dữ liệu local.", error);
+      const fallback: Position = {
+        id: uuidv4(),
+        maChucVu: finalCode,
+        tenChucVu: pos.tenChucVu,
+        moTa: pos.moTa,
+        visible: true,
+        ...baseData,
+      };
+      updatePositions((rows) => [fallback, ...rows]);
+    }
     showToast("Đã thêm chức vụ");
     setOpenAdd(false);
   };
 
-  const updatePosition = (updatedData: PositionEditData) => {
+  const updatePosition = async (updatedData: PositionEditData) => {
     if (!editingPosition) return;
 
-    setData(s => {
-      const next = s.map(pos => pos.id === editingPosition.id ? { ...pos, ...updatedData } : pos);
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
+    updatePositions((rows) =>
+      rows.map((pos) =>
+        pos.id === editingPosition.id
+          ? { ...pos, ...updatedData }
+          : pos
+      )
+    );
+    try {
+      const updated = await positionsService.update(editingPosition.id, {
+        maChucVu: updatedData.maChucVu,
+        tenChucVu: updatedData.tenChucVu,
+      });
+      updatePositions((rows) =>
+        rows.map((pos) =>
+          pos.id === editingPosition.id
+            ? {
+                ...pos,
+                maChucVu: updated.maChucVu,
+                tenChucVu: updated.tenChucVu,
+                moTa: updated.moTa ?? pos.moTa,
+                visible: updated.visible,
+                trangThai: updatedData.trangThai,
+              }
+            : pos
+        )
+      );
+    } catch (error) {
+      console.warn("Không thể cập nhật chức vụ trên Supabase.", error);
+    }
     showToast("Đã cập nhật chức vụ");
     setEditingPosition(null);
   };
 
-  const deletePosition = (id: string) => {
+  const deletePosition = async (id: string) => {
     const confirmed = window.confirm("Bạn có chắc chắn muốn xoá chức vụ này?");
-    if (confirmed) {
-      setData((s) => {
-        const next = s.filter((pos) => pos.id !== id);
-        localStorage.setItem("positionsData", JSON.stringify(next));
-        return next;
-      });
-      showToast("Đã xóa chức vụ");
+    if (!confirmed) return;
+    updatePositions((rows) => rows.filter((pos) => pos.id !== id));
+    try {
+      await positionsService.remove(id);
+    } catch (error) {
+      console.warn("Không thể xóa chức vụ trên Supabase.", error);
     }
+    showToast("Đã xóa chức vụ");
   };
 
   const showToast = (message: string) => {
@@ -179,13 +273,9 @@ export default function PositionPage() {
   };
 
   const toggleVisibility = (id: string) => {
-    setData((s) => {
-      const next = s.map((pos) =>
-        pos.id === id ? { ...pos, visible: !pos.visible } : pos
-      );
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
+    updatePositions((rows) =>
+      rows.map((pos) => (pos.id === id ? { ...pos, visible: !pos.visible } : pos))
+    );
   };
 
   const handleEdit = (position: Position) => {
