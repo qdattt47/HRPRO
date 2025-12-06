@@ -1,10 +1,9 @@
-import { apiFetch, buildApiUrl } from './api';
+import { supabase } from '@/lib/supabaseClient';
 
 const STORAGE_KEY = 'positionsData';
-const API_PREFIX = '/api/v1/positions';
 
-type BackendPosition = {
-  id: number;
+type SupabasePositionRow = {
+  id: string;
   code: string;
   name: string;
   description?: string | null;
@@ -42,8 +41,8 @@ const ensureSeed = (seed: PositionViewModel[] = []) => {
   return seed;
 };
 
-const toViewModel = (pos: BackendPosition): PositionViewModel => ({
-  id: String(pos.id),
+const toViewModel = (pos: SupabasePositionRow): PositionViewModel => ({
+  id: pos.id,
   maChucVu: pos.code,
   tenChucVu: pos.name,
   moTa: pos.description ?? '',
@@ -73,13 +72,55 @@ export const positionsService = {
   async list(seed?: PositionViewModel[]): Promise<PositionViewModel[]> {
     const cached = ensureSeed(seed);
     try {
-      const remote = await apiFetch<BackendPosition[]>(buildApiUrl(API_PREFIX));
-      const mapped = mergeVisibility(remote.map(toViewModel), cached);
+      const { data, error } = await supabase
+        .from('positions')
+        .select('id, code, name, description')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const mapped = mergeVisibility((data ?? []).map(toViewModel), cached);
       saveLocal(mapped);
       return mapped;
     } catch (error) {
       console.warn('Không thể tải danh sách chức vụ từ backend, dùng dữ liệu cache.', error);
       return cached;
     }
+  },
+  async create(payload: { maChucVu: string; tenChucVu: string; moTa?: string }): Promise<PositionViewModel> {
+    const { data, error } = await supabase
+      .from('positions')
+      .insert({
+        code: payload.maChucVu,
+        name: payload.tenChucVu,
+        description: payload.moTa ?? null,
+      })
+      .select('id, code, name, description')
+      .single();
+    if (error || !data) {
+      throw error ?? new Error('Không thể tạo chức vụ.');
+    }
+    return toViewModel(data);
+  },
+  async update(
+    positionId: string,
+    payload: Partial<{ maChucVu: string; tenChucVu: string; moTa?: string }>
+  ): Promise<PositionViewModel> {
+    const body: Record<string, unknown> = {};
+    if (payload.maChucVu !== undefined) body.code = payload.maChucVu;
+    if (payload.tenChucVu !== undefined) body.name = payload.tenChucVu;
+    if (payload.moTa !== undefined) body.description = payload.moTa;
+    const { data, error } = await supabase
+      .from('positions')
+      .update(body)
+      .eq('id', positionId)
+      .select('id, code, name, description')
+      .single();
+    if (error || !data) {
+      throw error ?? new Error('Không thể cập nhật chức vụ.');
+    }
+    return toViewModel(data);
+  },
+  async remove(positionId: string): Promise<void> {
+    const { error } = await supabase.from('positions').delete().eq('id', positionId);
+    if (error) throw error;
   },
 };

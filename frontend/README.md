@@ -53,3 +53,35 @@ Các bảng chính trong database (phòng ban/chức vụ/nhân viên) đều c�
 - Bộ modal thêm/sửa nhân viên hiển thị thêm trường "Ngày vào công ty" và lưu song song cả tên phòng ban/chức vụ lẫn ID để tương thích API FastAPI (`department_id`, `position_id`).
 
 > **Lưu ý:** Nếu dữ liệu cũ trong `localStorage` chưa có các trường mới, ứng dụng sẽ tự bổ sung khi khởi chạy (dựa vào phòng ban/chức vụ hiện có). Bạn chỉ cần cấu hình `VITE_API_BASE_URL` để kết nối tới backend FastAPI.
+
+## Kết nối Supabase
+
+Phiên bản hiện tại đã tích hợp Supabase làm database chính cho các bảng `departments`, `positions`, `employees`.
+
+1. **Biến môi trường**
+
+   Tạo file `.env` (hoặc `.env.local`) trong thư mục `frontend/` dựa trên `.env.example`:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Cập nhật hai biến:
+
+   ```ini
+   VITE_SUPABASE_URL=https://rbtcxqsuwpcpcqmbzdef.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
+
+   Đồng thời thêm hai biến này vào phần Environment Variables trên Netlify để build production.
+
+2. **Phân quyền Supabase**
+
+   - Bật Row Level Security cho các bảng.
+   - Tạo policy cho role `anon`/`authenticated` (tuỳ cơ chế đăng nhập) cho các thao tác `SELECT/INSERT/UPDATE/DELETE`.
+
+3. **Seed dữ liệu**
+
+   Ứng dụng sẽ đồng bộ Supabase với `localStorage`. Nếu bảng trống, bạn có thể import dữ liệu mẫu bằng SQL hoặc CSV trước khi chạy frontend lần đầu.
+
+Sau khi cấu hình xong, `departmentsService`, `positionsService` và `employeesService` sẽ tự đọc/ghi từ Supabase, đồng thời vẫn lưu snapshot vào `localStorage` để dùng offline.

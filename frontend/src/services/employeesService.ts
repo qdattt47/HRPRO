@@ -1,22 +1,23 @@
-import { apiFetch, buildApiUrl } from './api';
 import type { Employee } from '../components/ui/EmployeePage';
 import type { NewEmployeeData } from '../components/ui/AddEmployeeModal';
 import type { EmployeeEditData } from '../components/ui/EditEmployeeModal';
+import { supabase } from '@/lib/supabaseClient';
+import { extractJoinOrderFromCode } from '../utils/employeeCode';
 
 const STORAGE_KEY = 'employeesData';
-const API_PREFIX = '/api/v1/employees';
 
-type BackendEmployee = {
-  id: number;
-  code: string;
-  name: string;
-  department_id: number;
-  position_id: number;
-  department_name?: string | null;
-  position_name?: string | null;
+type RelationRow = { id: string; name: string | null };
+
+type SupabaseEmployeeRow = {
+  id: string;
+  employee_code: string;
+  full_name: string;
+  department_id: string;
+  position_id: string;
+  departments?: RelationRow | RelationRow[] | null;
+  positions?: RelationRow | RelationRow[] | null;
   base_salary: number;
   status: 'active' | 'inactive';
-  join_order: number;
   joined_at: string;
   photo_url?: string | null;
   account: string;
@@ -24,19 +25,6 @@ type BackendEmployee = {
   created_at: string;
   updated_at: string;
 };
-
-type CreateEmployeeDto = {
-  name: string;
-  department_id: number;
-  position_id: number;
-  base_salary: number;
-  status: 'active' | 'inactive';
-  account: string;
-  password: string;
-  photo_url?: string | null;
-};
-
-type UpdateEmployeeDto = Partial<CreateEmployeeDto>;
 
 const getLocal = (): Employee[] => {
   if (typeof localStorage === 'undefined') return [];
@@ -55,87 +43,65 @@ const saveLocal = (rows: Employee[]) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
 };
 
-const toViewModel = (employee: BackendEmployee): Employee => ({
-  id: String(employee.id),
-  code: employee.code,
-  name: employee.name,
-  dept: employee.department_name ?? '',
-  departmentId: String(employee.department_id),
-  position: employee.position_name ?? '',
-  positionId: String(employee.position_id),
-  baseSalary: Number(employee.base_salary),
-  status: employee.status,
-  visible: true,
-  photo: employee.photo_url ?? undefined,
-  joinOrder: employee.join_order,
-  joinedAt: employee.joined_at,
-  taiKhoan: employee.account,
-  matKhau: employee.password_hash,
-  account: employee.account,
-  password: employee.password_hash,
-  createdAt: employee.created_at,
-  updatedAt: employee.updated_at,
-});
+const resolveRelation = (relation?: RelationRow | RelationRow[] | null) => {
+  if (!relation) return null;
+  return Array.isArray(relation) ? relation[0] ?? null : relation;
+};
 
-const buildCreateDto = (payload: NewEmployeeData): CreateEmployeeDto | null => {
-  const deptId = Number(payload.departmentId);
-  const posId = Number(payload.positionId);
-  if (Number.isNaN(deptId) || Number.isNaN(posId)) {
-    return null;
-  }
+const toViewModel = (employee: SupabaseEmployeeRow): Employee => {
+  const joinOrder = extractJoinOrderFromCode(employee.employee_code) ?? undefined;
+  const department = resolveRelation(employee.departments);
+  const position = resolveRelation(employee.positions);
   return {
-    name: payload.name,
-    department_id: deptId,
-    position_id: posId,
-    base_salary: payload.baseSalary,
-    status: payload.status,
-    account: payload.taiKhoan,
-    password: payload.matKhau,
-    photo_url: payload.photo ?? undefined,
+    id: employee.id,
+    code: employee.employee_code,
+    name: employee.full_name,
+    dept: department?.name ?? '',
+    departmentId: employee.department_id,
+    position: position?.name ?? '',
+    positionId: employee.position_id,
+    baseSalary: Number(employee.base_salary),
+    status: employee.status,
+    visible: true,
+    photo: employee.photo_url ?? undefined,
+    joinOrder,
+    joinedAt: new Date(employee.joined_at).toISOString(),
+    taiKhoan: employee.account,
+    matKhau: employee.password_hash,
+    account: employee.account,
+    password: employee.password_hash,
+    createdAt: employee.created_at,
+    updatedAt: employee.updated_at,
   };
 };
-
-const buildUpdateDto = (payload: EmployeeEditData): UpdateEmployeeDto => {
-  const dto: UpdateEmployeeDto = {
-    name: payload.name,
-    base_salary: payload.baseSalary,
-    status: payload.status,
-    account: payload.taiKhoan,
-    photo_url: payload.photo ?? undefined,
-  };
-  if (payload.departmentId) {
-    const deptId = Number(payload.departmentId);
-    if (!Number.isNaN(deptId)) dto.department_id = deptId;
-  }
-  if (payload.positionId) {
-    const posId = Number(payload.positionId);
-    if (!Number.isNaN(posId)) dto.position_id = posId;
-  }
-  if (payload.matKhau) dto.password = payload.matKhau;
-  return dto;
-};
-
-const postJson = async <T>(path: string, body: unknown) =>
-  apiFetch<T>(buildApiUrl(path), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-const putJson = async <T>(path: string, body: unknown) =>
-  apiFetch<T>(buildApiUrl(path), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
 
 export const employeesService = {
   getLocalSnapshot: getLocal,
   saveLocalSnapshot: saveLocal,
   async list(): Promise<Employee[]> {
     try {
-      const remote = await apiFetch<BackendEmployee[]>(buildApiUrl(API_PREFIX));
-      const mapped = remote.map(toViewModel);
+      const { data, error } = await supabase
+        .from('employees')
+        .select(`
+          id,
+          employee_code,
+          full_name,
+          department_id,
+          position_id,
+          base_salary,
+          status,
+          joined_at,
+          account,
+          password_hash,
+          photo_url,
+          created_at,
+          updated_at,
+          departments:department_id ( id, name ),
+          positions:position_id ( id, name )
+        `)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const mapped = (data ?? []).map((row) => toViewModel(row as SupabaseEmployeeRow));
       saveLocal(mapped);
       return mapped;
     } catch (error) {
@@ -144,22 +110,90 @@ export const employeesService = {
     }
   },
   async create(payload: NewEmployeeData): Promise<Employee | null> {
-    const dto = buildCreateDto(payload);
-    if (!dto) {
-      console.warn('Thiếu thông tin phòng ban hoặc chức vụ nên không thể tạo nhân viên trên backend.');
+    if (!payload.departmentId || !payload.positionId) {
+      console.warn('Thiếu phòng ban hoặc chức vụ khi tạo nhân viên.');
       return null;
     }
-    const created = await postJson<BackendEmployee>(API_PREFIX, dto);
-    const viewModel = toViewModel(created);
+    const { data, error } = await supabase
+      .from('employees')
+      .insert({
+        employee_code: payload.code,
+        full_name: payload.name,
+        department_id: payload.departmentId,
+        position_id: payload.positionId,
+        base_salary: payload.baseSalary,
+        status: payload.status,
+        joined_at: payload.joinedAt,
+        account: payload.taiKhoan,
+        password_hash: payload.matKhau,
+        photo_url: payload.photo ?? null,
+      })
+      .select(`
+        id,
+        employee_code,
+        full_name,
+        department_id,
+        position_id,
+        base_salary,
+        status,
+        joined_at,
+        account,
+        password_hash,
+        photo_url,
+        created_at,
+        updated_at,
+        departments:department_id ( id, name ),
+        positions:position_id ( id, name )
+      `)
+      .single();
+    if (error || !data) {
+      throw error ?? new Error('Không thể tạo nhân viên.');
+    }
+    const viewModel = toViewModel(data as SupabaseEmployeeRow);
     const local = getLocal();
     saveLocal([viewModel, ...local.filter((row) => row.id !== viewModel.id)]);
     return viewModel;
   },
   async update(employeeId: string, payload: EmployeeEditData): Promise<Employee | null> {
-    const dto = buildUpdateDto(payload);
+    const updatePayload: Record<string, unknown> = {
+      full_name: payload.name,
+      base_salary: payload.baseSalary,
+      status: payload.status,
+      account: payload.taiKhoan,
+      joined_at: payload.joinedAt,
+      photo_url: payload.photo ?? null,
+    };
+    if (payload.code) updatePayload.employee_code = payload.code;
+    if (payload.departmentId) updatePayload.department_id = payload.departmentId;
+    if (payload.positionId) updatePayload.position_id = payload.positionId;
+    if (payload.matKhau) updatePayload.password_hash = payload.matKhau;
     try {
-      const updated = await putJson<BackendEmployee>(`${API_PREFIX}/${employeeId}`, dto);
-      const viewModel = toViewModel(updated);
+      const { data, error } = await supabase
+        .from('employees')
+        .update(updatePayload)
+        .eq('id', employeeId)
+        .select(`
+          id,
+          employee_code,
+          full_name,
+          department_id,
+          position_id,
+          base_salary,
+          status,
+          joined_at,
+          account,
+          password_hash,
+          photo_url,
+          created_at,
+          updated_at,
+          departments:department_id ( id, name ),
+          positions:position_id ( id, name )
+        `)
+        .single();
+      if (error || !data) {
+        throw error ?? new Error('Không thể cập nhật nhân viên.');
+      }
+      const viewModel = toViewModel(data as SupabaseEmployeeRow);
       const local = getLocal().map((row) => (row.id === viewModel.id ? viewModel : row));
       saveLocal(local);
       return viewModel;
@@ -170,7 +204,8 @@ export const employeesService = {
   },
   async remove(employeeId: string): Promise<boolean> {
     try {
-      await apiFetch(buildApiUrl(`${API_PREFIX}/${employeeId}`), { method: 'DELETE' });
+      const { error } = await supabase.from('employees').delete().eq('id', employeeId);
+      if (error) throw error;
       const local = getLocal().filter((row) => row.id !== employeeId);
       saveLocal(local);
       return true;

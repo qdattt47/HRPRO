@@ -1,11 +1,10 @@
-import { apiFetch, buildApiUrl } from './api';
 import type { DepartmentStatus } from './types';
+import { supabase } from '@/lib/supabaseClient';
 
 const STORAGE_KEY = 'departmentsData';
-const API_PREFIX = '/api/v1/departments';
 
-type BackendDepartment = {
-  id: number;
+type SupabaseDepartmentRow = {
+  id: string;
   code: string;
   name: string;
   founded_year?: number | null;
@@ -25,8 +24,8 @@ export type DepartmentViewModel = DepartmentPayload & {
   truongPhong?: string;
 };
 
-const toViewModel = (dept: BackendDepartment): DepartmentViewModel => ({
-  id: String(dept.id),
+const toViewModel = (dept: SupabaseDepartmentRow): DepartmentViewModel => ({
+  id: dept.id,
   maPhong: dept.code,
   tenPhong: dept.name,
   namThanhLap: dept.founded_year ?? new Date().getFullYear(),
@@ -83,20 +82,6 @@ const mergeVisibility = (
   }));
 };
 
-const postJson = async <T>(path: string, body: unknown) =>
-  apiFetch<T>(buildApiUrl(path), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-const putJson = async <T>(path: string, body: unknown) =>
-  apiFetch<T>(buildApiUrl(path), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
 export const departmentsService = {
   loadLocal(seed?: DepartmentViewModel[]) {
     return ensureSeedData(seed);
@@ -115,8 +100,12 @@ export const departmentsService = {
   async list(seed?: DepartmentViewModel[]): Promise<DepartmentViewModel[]> {
     const cached = ensureSeedData(seed);
     try {
-      const remote = await apiFetch<BackendDepartment[]>(buildApiUrl(API_PREFIX));
-      const mapped = mergeVisibility(remote.map(toViewModel), cached);
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, code, name, founded_year, status')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const mapped = mergeVisibility((data ?? []).map(toViewModel), cached);
       saveLocalDepartments(mapped);
       return mapped;
     } catch (error) {
@@ -125,22 +114,37 @@ export const departmentsService = {
     }
   },
   async create(payload: DepartmentPayload): Promise<DepartmentViewModel> {
-    const response = await postJson<BackendDepartment>(API_PREFIX, toBackendPayload(payload));
-    return toViewModel(response);
+    const body = toBackendPayload(payload);
+    const { data, error } = await supabase
+      .from('departments')
+      .insert(body)
+      .select('id, code, name, founded_year, status')
+      .single();
+    if (error || !data) {
+      throw error ?? new Error('Không thể tạo phòng ban.');
+    }
+    return toViewModel(data);
   },
   async update(
     departmentId: string,
     payload: Partial<DepartmentPayload>
   ): Promise<DepartmentViewModel> {
-    const response = await putJson<BackendDepartment>(
-      `${API_PREFIX}/${departmentId}`,
-      toBackendPayload(payload)
-    );
-    return toViewModel(response);
+    const body = toBackendPayload(payload);
+    const { data, error } = await supabase
+      .from('departments')
+      .update(body)
+      .eq('id', departmentId)
+      .select('id, code, name, founded_year, status')
+      .single();
+    if (error || !data) {
+      throw error ?? new Error('Không thể cập nhật phòng ban.');
+    }
+    return toViewModel(data);
   },
   async remove(departmentId: string): Promise<void> {
-    await apiFetch(buildApiUrl(`${API_PREFIX}/${departmentId}`), {
-      method: 'DELETE',
-    });
+    const { error } = await supabase.from('departments').delete().eq('id', departmentId);
+    if (error) {
+      throw error;
+    }
   },
 };
