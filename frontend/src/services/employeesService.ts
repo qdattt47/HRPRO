@@ -101,7 +101,9 @@ export const employeesService = {
         `)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      const mapped = (data ?? []).map((row) => toViewModel(row as SupabaseEmployeeRow));
+      const mapped = (data ?? []).map((row: Record<string, unknown>) =>
+        toViewModel(row as SupabaseEmployeeRow)
+      );
       saveLocal(mapped);
       return mapped;
     } catch (error) {
