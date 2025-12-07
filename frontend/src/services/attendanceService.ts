@@ -1,4 +1,5 @@
 import { apiFetch, buildApiUrl } from './api';
+import { supabase } from '@/lib/supabaseClient';
 import type {
   AttendanceType,
   EnrollFacePayload,
@@ -158,4 +159,26 @@ export const attendanceService = {
     threshold,
     source: 'local',
   }),
+  saveAttendanceEvent: async ({
+    employeeId,
+    type,
+    timestamp,
+    distance,
+    threshold,
+    source,
+  }: FaceCheckResponse) => {
+    try {
+      const { error } = await supabase.from('attendance_records').insert({
+        employee_id: employeeId,
+        type,
+        timestamp,
+        distance,
+        threshold,
+        source,
+      });
+      if (error) throw error;
+    } catch (error) {
+      console.warn('Không lưu được attendance_records lên Supabase.', error);
+    }
+  },
 };

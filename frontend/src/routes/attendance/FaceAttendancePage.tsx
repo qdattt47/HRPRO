@@ -98,6 +98,8 @@ const dinhDangThoiGian = () =>
 
 const THOI_GIAN_MO_PHONG = 3600 / 5; // 5 giây thực tế = 1 giờ chấm công
 
+const buildActiveCheckInKey = (employeeId: string) => `activeCheckIn:${employeeId}`;
+
 const FaceAttendancePage = () => {
   const navigate = useNavigate();
   const [employees] = useState(loadEmployees);
@@ -152,6 +154,14 @@ const FaceAttendancePage = () => {
     setHistoryRecords(loadHistory(employee.id).reverse());
     setMonthlyHours(readMonthlyHours(employee.id));
     setShowHistory(false);
+    const activeKey = buildActiveCheckInKey(employee.id);
+    const savedCheckin = localStorage.getItem(activeKey);
+    if (savedCheckin) {
+      const parsed = new Date(savedCheckin);
+      if (!Number.isNaN(parsed.getTime())) {
+        setCheckInTime(parsed);
+      }
+    }
     return () => {
       active = false;
     };
@@ -256,14 +266,27 @@ useEffect(() => {
       setTimeout(() => setThongBao(null), 4000);
       const lastCheckIn = checkInTime;
       let workedHours: number | undefined;
+      const activeKey = buildActiveCheckInKey(employee.id);
       if (kieu === "in") {
+        localStorage.setItem(activeKey, eventTime.toISOString());
         setCheckInTime(eventTime);
         setCheckOutTime(null);
       } else {
         if (!lastCheckIn) return;
         setCheckOutTime(eventTime);
         workedHours = tinhThoiGianLam(lastCheckIn, eventTime);
+        localStorage.removeItem(activeKey);
+        setCheckInTime(null);
       }
+
+      void attendanceService.saveAttendanceEvent({
+        employeeId: employee.id,
+        type: kieu === 'in' ? 'checkin' : 'checkout',
+        timestamp: eventTime.toISOString(),
+        distance: response.distance,
+        threshold: response.threshold,
+        source: response.source,
+      });
 
       addHistoryRecord(employee.id, {
         id: `${employee.id}-${eventTime.getTime()}-${kieu}`,
