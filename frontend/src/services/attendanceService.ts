@@ -106,28 +106,148 @@ const postJson = async <T>(path: string, body: unknown) =>
 
 const getJson = async <T>(path: string) => apiFetch<T>(buildApiUrl(path));
 
+type SupabaseFaceEmbeddingRow = {
+  employee_id: string;
+  embedding: unknown;
+  created_at: string | null;
+};
+
+const normalizeEmbedding = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const num = Number(item);
+    return Number.isFinite(num) ? num : 0;
+  });
+};
+
+const fetchRemoteEmbeddings = async (employeeId?: string) => {
+  try {
+    let query = supabase
+      .from('face_embeddings')
+      .select('employee_id, embedding, created_at');
+    if (employeeId) {
+      query = query.eq('employee_id', employeeId);
+    }
+    const { data, error } = await query;
+    if (error || !data) {
+      if (error) throw error;
+      return [];
+    }
+    return (data as SupabaseFaceEmbeddingRow[])
+      .map((row) => ({
+        employeeId: row.employee_id,
+        embedding: normalizeEmbedding(row.embedding),
+        createdAt: row.created_at ?? new Date().toISOString(),
+      }))
+      .filter((row) => row.embedding.length);
+  } catch (error) {
+    console.warn('Không lấy được dữ liệu face_embeddings từ Supabase.', error);
+    return [];
+  }
+};
+
+const saveRemoteEmbedding = async (payload: EnrollFacePayload) => {
+  const { data, error } = await supabase
+    .from('face_embeddings')
+    .upsert(
+      {
+        employee_id: payload.employeeId,
+        embedding: payload.embedding,
+        snapshot: payload.snapshot ?? null,
+      },
+      { onConflict: 'employee_id' }
+    )
+    .select('created_at')
+    .single();
+  if (error) throw error;
+  return data?.created_at ?? new Date().toISOString();
+};
+
+const buildCheckResponse = (
+  rows: FaceEmbeddingRow[],
+  payload: FaceCheckPayload,
+  source: FaceCheckResponse['source']
+): FaceCheckResponse => {
+  if (!rows.length) {
+    throw new Error('Chưa có dữ liệu khuôn mặt nào trong hệ thống.');
+  }
+
+  let match: FaceEmbeddingRow | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  rows.forEach((row) => {
+    const distance = euclideanDistance(row.embedding, payload.embedding);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      match = row;
+    }
+  });
+
+  const threshold = payload.threshold ?? 0.5;
+  if (!match || bestDistance > threshold) {
+    throw new Error('Không nhận diện được khuôn mặt trong cơ sở dữ liệu.');
+  }
+
+  const confirmedMatch = match as FaceEmbeddingRow;
+
+  return {
+    employeeId: confirmedMatch.employeeId,
+    type: payload.type,
+    timestamp: new Date().toISOString(),
+    distance: bestDistance,
+    threshold,
+    source,
+  };
+};
+
 export const attendanceService = {
   list: async () => [],
   enrollFace: async (payload: EnrollFacePayload) => {
     try {
-      const response = await postJson<EnrollFaceResponse>('/api/enroll-face', payload);
+      const createdAt = await saveRemoteEmbedding(payload);
       storeLocalEmbedding(payload);
-      return { ...response, source: 'remote' as const };
+      return {
+        employeeId: payload.employeeId,
+        createdAt,
+        source: 'remote' as const,
+      };
     } catch (error) {
-      console.warn('Gọi API enroll-face thất bại, dùng local storage.', error);
-      return fallbackEnroll(payload);
+      console.warn('Không thể lưu face_embeddings lên Supabase, thử API backend.', error);
+      try {
+        const response = await postJson<EnrollFaceResponse>('/api/enroll-face', payload);
+        storeLocalEmbedding(payload);
+        return { ...response, source: 'remote' as const };
+      } catch (apiError) {
+        console.warn('Gọi API enroll-face thất bại, dùng local storage.', apiError);
+        return fallbackEnroll(payload);
+      }
     }
   },
   checkInWithFace: async (payload: FaceCheckPayload) => {
     try {
-      const response = await postJson<FaceCheckResponse>('/api/checkin', payload);
-      return { ...response, source: 'remote' as const };
+      const remoteRows = await fetchRemoteEmbeddings();
+      if (remoteRows.length) {
+        return buildCheckResponse(remoteRows, payload, 'remote');
+      }
+      throw new Error('Không có dữ liệu khuôn mặt trên Supabase.');
     } catch (error) {
-      console.warn('Gọi API checkin thất bại, dùng local storage.', error);
-      return fallbackCheck(payload);
+      console.warn('Không kiểm tra được khuôn mặt bằng Supabase, thử API backend.', error);
+      try {
+        const response = await postJson<FaceCheckResponse>('/api/checkin', payload);
+        return { ...response, source: 'remote' as const };
+      } catch (apiError) {
+        console.warn('Gọi API checkin thất bại, dùng local storage.', apiError);
+        return fallbackCheck(payload);
+      }
     }
   },
   hasFaceEnrollment: async (employeeId: string) => {
+    try {
+      const remote = await fetchRemoteEmbeddings(employeeId);
+      if (remote.length) return true;
+    } catch (error) {
+      console.warn('Không kiểm tra được dữ liệu khuôn mặt từ Supabase.', error);
+    }
     try {
       const response = await getJson<{ registered: boolean }>(
         `/api/employees/${employeeId}/face`
@@ -142,6 +262,7 @@ export const attendanceService = {
   clearLocalEmbedding: (employeeId: string) => {
     const next = getLocalEmbeddings().filter((row) => row.employeeId !== employeeId);
     saveLocalEmbeddings(next);
+    void supabase.from('face_embeddings').delete().eq('employee_id', employeeId);
   },
   getLocalEmbeddings,
   computeDistance: euclideanDistance,
