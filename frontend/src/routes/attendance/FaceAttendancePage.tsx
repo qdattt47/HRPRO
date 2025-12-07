@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import FaceAttendanceShell, {
   type FaceAttendanceShellHandle,
@@ -6,63 +6,16 @@ import FaceAttendanceShell, {
 import './attendance.css';
 import { captureFaceDescriptor, descriptorToArray } from '../../lib/faceRecognition';
 import { attendanceService } from '../../services/attendanceService';
-
-type AttendanceHistoryRecord = {
-  id: string;
-  type: 'checkin' | 'checkout';
-  timestamp: string;
-  durationHours?: number;
-};
-
-const HISTORY_LIMIT = 200;
-
-const addHistoryRecord = (employeeId: string, record: AttendanceHistoryRecord) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = `attendanceHistory:${employeeId}`;
-  let current: AttendanceHistoryRecord[] = [];
-  const raw = localStorage.getItem(key);
-  if (raw) {
-    try {
-      current = JSON.parse(raw) as AttendanceHistoryRecord[];
-    } catch (error) {
-      console.warn('Không đọc được attendanceHistory:', error);
-    }
-  }
-  current.push(record);
-  if (current.length > HISTORY_LIMIT) {
-    current = current.slice(-HISTORY_LIMIT);
-  }
-  localStorage.setItem(key, JSON.stringify(current));
-};
-
-const loadHistory = (employeeId: string): AttendanceHistoryRecord[] => {
-  if (typeof localStorage === 'undefined') return [];
-  const raw = localStorage.getItem(`attendanceHistory:${employeeId}`);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as AttendanceHistoryRecord[]) : [];
-  } catch (error) {
-    console.warn('Không đọc được attendanceHistory:', error);
-    return [];
-  }
-};
-
-const readMonthlyHours = (employeeId: string) => {
-  if (typeof localStorage === 'undefined') return 0;
-  const raw = localStorage.getItem(`workingHours:${employeeId}`);
-  if (!raw) return 0;
-  try {
-    const parsed = JSON.parse(raw) as { year: number; month: number; hours: number };
-    const now = new Date();
-    if (parsed.year === now.getFullYear() && parsed.month === now.getMonth() + 1) {
-      return Number(parsed.hours) || 0;
-    }
-  } catch (error) {
-    console.warn('Không đọc được workingHours:', error);
-  }
-  return 0;
-};
+import { payrollService } from '../../services/payrollService';
+import type { Employee } from '../../components/ui/EmployeePage';
+import {
+  appendLocalAttendanceRecord,
+  loadLocalAttendanceHistory,
+  summarizeAttendanceRecords,
+  calculateSalaryProjection,
+  calculateSimulatedHours,
+  type AttendanceEvent,
+} from '../../lib/attendanceHistory';
 
 const loadEmployees = () => {
   const stored = localStorage.getItem("employeesData");
@@ -89,15 +42,6 @@ const loadEmployees = () => {
   ];
 };
 
-const dinhDangThoiGian = () =>
-  new Intl.DateTimeFormat('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(new Date());
-
-const THOI_GIAN_MO_PHONG = 3600 / 5; // 5 giây thực tế = 1 giờ chấm công
-
 const buildActiveCheckInKey = (employeeId: string) => `activeCheckIn:${employeeId}`;
 
 const FaceAttendancePage = () => {
@@ -109,19 +53,63 @@ const FaceAttendancePage = () => {
   const [hasRegisteredFace, setHasRegisteredFace] = useState(false);
   const [dangChamCong, setDangChamCong] = useState(false);
   const shellRef = useRef<FaceAttendanceShellHandle | null>(null);
-  const [historyRecords, setHistoryRecords] = useState<AttendanceHistoryRecord[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<AttendanceEvent[]>([]);
   const [monthlyHours, setMonthlyHours] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
+  const refreshAttendanceData = useCallback(async (target: Employee, salaryInput?: number) => {
+    const referenceDate = new Date();
+    try {
+      const remoteRecords = await attendanceService.fetchAttendanceHistory(target.id);
+      if (remoteRecords.length) {
+        const summary = summarizeAttendanceRecords(remoteRecords, referenceDate);
+        setHistoryRecords(summary.history);
+        setMonthlyHours(summary.monthlyHours);
+        const baseValue = salaryInput ?? target.baseSalary ?? 0;
+        if (baseValue > 0) {
+          const payroll = calculateSalaryProjection(summary.monthlyHours, baseValue);
+          void payrollService.upsertMonthlySummary({
+            employeeId: target.id,
+            year: referenceDate.getFullYear(),
+            month: referenceDate.getMonth() + 1,
+            totalHours: summary.monthlyHours,
+            overtimeHours: payroll.overtimeHours,
+            baseSalary: baseValue,
+            overtimePay: payroll.overtimePay,
+            totalPay: payroll.projectedSalary,
+            status: payroll.hasBaseSalary ? 'approved' : 'draft',
+          });
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn('Không tải được lịch sử chấm công từ Supabase.', error);
+    }
+    const localRecords = loadLocalAttendanceHistory(target.id);
+    const summary = summarizeAttendanceRecords(localRecords, referenceDate);
+    setHistoryRecords(summary.history);
+    setMonthlyHours(summary.monthlyHours);
+    const fallbackSalary = salaryInput ?? target.baseSalary ?? 0;
+    if (fallbackSalary > 0) {
+      const payroll = calculateSalaryProjection(summary.monthlyHours, fallbackSalary);
+      void payrollService.upsertMonthlySummary({
+        employeeId: target.id,
+        year: referenceDate.getFullYear(),
+        month: referenceDate.getMonth() + 1,
+        totalHours: summary.monthlyHours,
+        overtimeHours: payroll.overtimeHours,
+        baseSalary: fallbackSalary,
+        overtimePay: payroll.overtimePay,
+        totalPay: payroll.projectedSalary,
+        status: payroll.hasBaseSalary ? 'approved' : 'draft',
+      });
+    }
+  }, []);
   const legacySalary =
     employee && typeof employee === "object"
       ? Number((employee as Record<string, unknown>)["salary"])
       : undefined;
   const baseSalary = employee?.baseSalary ?? legacySalary ?? 0;
-  const hourlyRate = baseSalary / 160;
-  const hasBaseSalary = monthlyHours >= 40;
-  const overtimeHours = Math.max(0, monthlyHours - 40);
-  const overtimePay = hasBaseSalary ? overtimeHours * hourlyRate : 0;
-  const projectedSalary = hasBaseSalary ? baseSalary + overtimePay : 0;
+  const salaryInfo = calculateSalaryProjection(monthlyHours, baseSalary);
 
   useEffect(() => {
     const storedId = localStorage.getItem("attendanceEmployeeId");
@@ -132,8 +120,6 @@ const FaceAttendancePage = () => {
     const foundEmployee = employees.find((emp) => emp.id === storedId);
     if (foundEmployee) {
       setEmployee(foundEmployee);
-      setHistoryRecords(loadHistory(foundEmployee.id).reverse());
-      setMonthlyHours(readMonthlyHours(foundEmployee.id));
     } else {
       navigate('/', { replace: true });
     }
@@ -151,8 +137,6 @@ const FaceAttendancePage = () => {
       const registered = await attendanceService.hasFaceEnrollment(employee.id);
       if (active) setHasRegisteredFace(registered);
     })();
-    setHistoryRecords(loadHistory(employee.id).reverse());
-    setMonthlyHours(readMonthlyHours(employee.id));
     setShowHistory(false);
     const activeKey = buildActiveCheckInKey(employee.id);
     const savedCheckin = localStorage.getItem(activeKey);
@@ -162,59 +146,13 @@ const FaceAttendancePage = () => {
         setCheckInTime(parsed);
       }
     }
+    void refreshAttendanceData(employee, employee.baseSalary ?? 0);
     return () => {
       active = false;
     };
-  }, [employee]);
-  const [checkInTime, setCheckInTime] = useState<Date | null>(null);
+  }, [employee, refreshAttendanceData]);
+const [checkInTime, setCheckInTime] = useState<Date | null>(null);
 const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
-const [tongGioThangNay, setTongGioThangNay] = useState(0);
-
-const capNhatGioLamThangNay = (gioMoi: number) => {
-  if (!employee || gioMoi <= 0) return;
-  const now = new Date();
-  const key = `workingHours:${employee.id}`;
-  const nextHours = Number((tongGioThangNay + gioMoi).toFixed(2));
-  const payload = {
-    year: now.getFullYear(),
-    month: now.getMonth() + 1,
-    hours: nextHours,
-  };
-  setTongGioThangNay(nextHours);
-  localStorage.setItem(key, JSON.stringify(payload));
-};
-
-useEffect(() => {
-  if (!employee) return;
-  const now = new Date();
-  const key = `workingHours:${employee.id}`;
-  const stored = localStorage.getItem(key);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as {
-        year: number;
-        month: number;
-        hours: number;
-      };
-      if (
-        parsed.year === now.getFullYear() &&
-        parsed.month === now.getMonth() + 1
-      ) {
-        setTongGioThangNay(Number(parsed.hours) || 0);
-        return;
-      }
-    } catch (error) {
-      console.warn("Không đọc được workingHours:", error);
-    }
-  }
-  const payload = {
-    year: now.getFullYear(),
-    month: now.getMonth() + 1,
-    hours: 0,
-  };
-  setTongGioThangNay(0);
-  localStorage.setItem(key, JSON.stringify(payload));
-}, [employee]);
 
   const xuLyChamCong = async (kieu: 'in' | 'out') => {
     if (!employee) {
@@ -274,7 +212,7 @@ useEffect(() => {
       } else {
         if (!lastCheckIn) return;
         setCheckOutTime(eventTime);
-        workedHours = tinhThoiGianLam(lastCheckIn, eventTime);
+        workedHours = calculateSimulatedHours(lastCheckIn, eventTime);
         localStorage.removeItem(activeKey);
         setCheckInTime(null);
       }
@@ -288,14 +226,13 @@ useEffect(() => {
         source: response.source,
       });
 
-      addHistoryRecord(employee.id, {
+      appendLocalAttendanceRecord(employee.id, {
         id: `${employee.id}-${eventTime.getTime()}-${kieu}`,
         type: kieu === 'in' ? 'checkin' : 'checkout',
         timestamp: eventTime.toISOString(),
         durationHours: workedHours,
       });
-      setHistoryRecords(loadHistory(employee.id).reverse());
-      setMonthlyHours(readMonthlyHours(employee.id));
+      await refreshAttendanceData(employee, baseSalary);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Không thể chấm công bằng khuôn mặt.";
@@ -306,23 +243,6 @@ useEffect(() => {
       setDangChamCong(false);
     }
   };
- const [soGioLam, setSoGioLam] = useState(0);
-
-const tinhThoiGianLam = (inTime: Date, outTime: Date) => {
-  const diffMs = outTime.getTime() - inTime.getTime();
-  const minutes = diffMs / (1000 * 60);
-  const hours = minutes / 60;
-
-  const lunchBreak = 1; // giờ thực tế
-  const hasLunchBreak = inTime.getHours() < 12 && outTime.getHours() > 13;
-
-  const realHours = hasLunchBreak ? hours - lunchBreak : hours;
-  const simulatedHours = Math.max(0, Number((realHours * THOI_GIAN_MO_PHONG).toFixed(2)));
-
-  setSoGioLam(simulatedHours);
-  capNhatGioLamThangNay(simulatedHours);
-  return simulatedHours;
-};
 
   return (
     <div className="trang-cham-cong">
@@ -422,12 +342,12 @@ const tinhThoiGianLam = (inTime: Date, outTime: Date) => {
                           Tổng tiền lương dự kiến
                         </p>
                         <p className="text-2xl font-bold text-emerald-600 mt-1">
-                          {projectedSalary.toLocaleString('vi-VN')}₫
+                          {salaryInfo.projectedSalary.toLocaleString('vi-VN')}₫
                         </p>
                         <p className="text-[11px] text-slate-500 mt-1">
-                          {hasBaseSalary
-                            ? overtimeHours > 0
-                              ? `Bao gồm ${overtimeHours.toFixed(2)}h làm thêm (+${overtimePay.toLocaleString('vi-VN')}₫)`
+                          {salaryInfo.hasBaseSalary
+                            ? salaryInfo.overtimeHours > 0
+                              ? `Bao gồm ${salaryInfo.overtimeHours.toFixed(2)}h làm thêm (+${salaryInfo.overtimePay.toLocaleString('vi-VN')}₫)`
                               : 'Đã đủ 40 giờ, hiển thị lương cơ bản'
                             : 'Chưa đủ 40 giờ để nhận lương cơ bản'}
                         </p>

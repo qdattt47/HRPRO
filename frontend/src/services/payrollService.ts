@@ -1,3 +1,82 @@
+import { supabase } from '@/lib/supabaseClient';
+
+export type MonthlyPayrollRow = {
+  id: string;
+  employee_id: string;
+  year: number;
+  month: number;
+  total_hours: number;
+  overtime_hours: number;
+  base_salary: number;
+  overtime_pay: number;
+  total_pay: number;
+  status: 'draft' | 'approved' | 'paid';
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type MonthlyPayrollUpsert = {
+  employeeId: string;
+  year: number;
+  month: number;
+  totalHours: number;
+  overtimeHours: number;
+  baseSalary: number;
+  overtimePay: number;
+  totalPay: number;
+  status?: 'draft' | 'approved' | 'paid';
+};
+
 export const payrollService = {
-  list: async () => [],
+  async upsertMonthlySummary(payload: MonthlyPayrollUpsert) {
+    try {
+      const { error } = await supabase
+        .from('monthly_payrolls')
+        .upsert(
+          {
+            employee_id: payload.employeeId,
+            year: payload.year,
+            month: payload.month,
+            total_hours: payload.totalHours,
+            overtime_hours: payload.overtimeHours,
+            base_salary: payload.baseSalary,
+            overtime_pay: payload.overtimePay,
+            total_pay: payload.totalPay,
+            status: payload.status ?? (payload.totalHours >= 40 ? 'approved' : 'draft'),
+          },
+          { onConflict: 'employee_id,year,month' }
+        );
+      if (error) throw error;
+    } catch (error) {
+      console.warn('Không thể cập nhật monthly_payrolls trên Supabase.', error);
+    }
+  },
+  async fetchMonthlyPayrolls(employeeId: string, year: number) {
+    const { data, error } = await supabase
+      .from('monthly_payrolls')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .eq('year', year)
+      .order('month', { ascending: true });
+    if (error) {
+      console.warn('Không lấy được monthly_payrolls.', error);
+      return [] as MonthlyPayrollRow[];
+    }
+    return (data as MonthlyPayrollRow[]) ?? [];
+  },
+  async fetchYearOverview(year: number, month?: number) {
+    let query = supabase
+      .from('monthly_payrolls')
+      .select('*, employees!inner(id, full_name)')
+      .eq('year', year);
+    if (typeof month === 'number') {
+      query = query.eq('month', month);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Không lấy được báo cáo lương từ Supabase.', error);
+      return [] as MonthlyPayrollRow[];
+    }
+    return (data as MonthlyPayrollRow[]) ?? [];
+  },
 };

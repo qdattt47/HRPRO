@@ -8,6 +8,7 @@ import type {
   FaceCheckResponse,
   FaceEmbeddingRow,
 } from './types';
+import type { AttendanceEvent } from '@/lib/attendanceHistory';
 
 const LOCAL_EMBEDDINGS_KEY = 'faceEmbeddings';
 
@@ -110,6 +111,15 @@ type SupabaseFaceEmbeddingRow = {
   employee_id: string;
   embedding: unknown;
   created_at: string | null;
+};
+
+type SupabaseAttendanceRecordRow = {
+  id: string;
+  employee_id: string;
+  type: AttendanceType;
+  timestamp: string;
+  distance?: number | null;
+  threshold?: number | null;
 };
 
 const normalizeEmbedding = (value: unknown): number[] => {
@@ -300,6 +310,28 @@ export const attendanceService = {
       if (error) throw error;
     } catch (error) {
       console.warn('Không lưu được attendance_records lên Supabase.', error);
+    }
+  },
+  fetchAttendanceHistory: async (employeeId: string, limit = 200): Promise<AttendanceEvent[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .select('id, employee_id, type, timestamp')
+        .eq('employee_id', employeeId)
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+      if (error || !data) {
+        if (error) throw error;
+        return [];
+      }
+      return (data as SupabaseAttendanceRecordRow[]).map((row) => ({
+        id: row.id,
+        type: row.type,
+        timestamp: row.timestamp,
+      }));
+    } catch (error) {
+      console.warn('Không tải được attendance_records từ Supabase.', error);
+      return [];
     }
   },
 };
