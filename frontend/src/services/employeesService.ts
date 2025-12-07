@@ -78,6 +78,45 @@ const toViewModel = (employee: SupabaseEmployeeRow): Employee => {
 export const employeesService = {
   getLocalSnapshot: getLocal,
   saveLocalSnapshot: saveLocal,
+  async authenticate(account: string, password: string): Promise<Employee | null> {
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select(`
+          id,
+          employee_code,
+          full_name,
+          department_id,
+          position_id,
+          base_salary,
+          status,
+          joined_at,
+          account,
+          password_hash,
+          photo_url,
+          created_at,
+          updated_at,
+          departments:department_id ( id, name ),
+          positions:position_id ( id, name )
+        `)
+        .eq('account', account)
+        .eq('password_hash', password)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const viewModel = toViewModel(data as SupabaseEmployeeRow);
+      const local = getLocal();
+      const next = [viewModel, ...local.filter((row) => row.id !== viewModel.id)];
+      saveLocal(next);
+      return viewModel;
+    } catch (error) {
+      console.warn('Không xác thực được nhân viên trên backend.', error);
+      const local = getLocal();
+      return (
+        local.find((emp) => emp.taiKhoan === account && emp.matKhau === password) ?? null
+      );
+    }
+  },
   async list(): Promise<Employee[]> {
     try {
       const { data, error } = await supabase

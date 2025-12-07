@@ -1,23 +1,12 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import anhTrangChu from '@/assets/anhtrangchu.png';
 import anhDangNhap from '@/assets/dangnhap.png';
 import { adminAccount, verifyAdminLogin } from '@/services/mocks/auth';
+import { employeesService } from '@/services/employeesService';
 import './welcome.css';
 
 const menuItems = ['Tài liệu', 'Hỗ trợ', 'Đăng nhập'];
-
-const docDanhSachNhanVien = () => {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem("employeesData");
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored) ?? [];
-  } catch (error) {
-    console.warn("Không đọc được employeesData:", error);
-    return [];
-  }
-};
 
 const TrangChaoMung = () => {
   const navigate = useNavigate();
@@ -29,6 +18,7 @@ const TrangChaoMung = () => {
   const [taiKhoanNhanVien, setTaiKhoanNhanVien] = useState('');
   const [matKhauNhanVien, setMatKhauNhanVien] = useState('');
   const [thongBaoLoiNhanVien, setThongBaoLoiNhanVien] = useState<string | null>(null);
+  const [dangDongBoNhanVien, setDangDongBoNhanVien] = useState(false);
 
   const xuLyDangNhap = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,20 +31,24 @@ const TrangChaoMung = () => {
     }
   };
 
-  const xuLyDangNhapChamCong = (event: FormEvent<HTMLFormElement>) => {
+  const xuLyDangNhapChamCong = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const danhSach = docDanhSachNhanVien();
-    const timThay = danhSach.find(
-      (emp: { taiKhoan?: string; matKhau?: string }) =>
-        emp.taiKhoan === taiKhoanNhanVien && emp.matKhau === matKhauNhanVien
-    );
-    if (timThay && timThay.id) {
-      localStorage.setItem("attendanceEmployeeId", timThay.id);
-      setThongBaoLoiNhanVien(null);
-      setMoDangNhapChamCong(false);
-      navigate('/attendance');
-    } else {
+    setDangDongBoNhanVien(true);
+    try {
+      const timThay = await employeesService.authenticate(taiKhoanNhanVien, matKhauNhanVien);
+      if (timThay && timThay.id) {
+        localStorage.setItem('attendanceEmployeeId', timThay.id);
+        setThongBaoLoiNhanVien(null);
+        setMoDangNhapChamCong(false);
+        navigate('/attendance');
+        return;
+      }
       setThongBaoLoiNhanVien('Tài khoản hoặc mật khẩu không đúng.');
+    } catch (error) {
+      console.warn('Không xác thực được nhân viên trước khi đăng nhập.', error);
+      setThongBaoLoiNhanVien('Không thể kiểm tra tài khoản. Vui lòng thử lại.');
+    } finally {
+      setDangDongBoNhanVien(false);
     }
   };
 
@@ -64,6 +58,23 @@ const TrangChaoMung = () => {
     setThongBaoLoiNhanVien(null);
     setMoDangNhapChamCong(true);
   };
+
+  useEffect(() => {
+    let active = true;
+    setDangDongBoNhanVien(true);
+    (async () => {
+      try {
+        await employeesService.list();
+      } catch (error) {
+        console.warn('Không đồng bộ được danh sách nhân viên khi mở trang.', error);
+      } finally {
+        if (active) setDangDongBoNhanVien(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="nen-trang-chao">
@@ -221,6 +232,7 @@ const TrangChaoMung = () => {
                       value={taiKhoanNhanVien}
                       onChange={(event) => setTaiKhoanNhanVien(event.target.value)}
                       placeholder="VD: minhanh"
+                      disabled={dangDongBoNhanVien}
                     />
                   </label>
                   <label className="nhan-truong">
@@ -231,11 +243,17 @@ const TrangChaoMung = () => {
                       value={matKhauNhanVien}
                       onChange={(event) => setMatKhauNhanVien(event.target.value)}
                       placeholder="••••••••"
+                      disabled={dangDongBoNhanVien}
                     />
                   </label>
                   {thongBaoLoiNhanVien && <p className="thong-bao-loi">{thongBaoLoiNhanVien}</p>}
-                  <button type="submit" className="nut-dang-nhap">
-                    Đăng nhập & chấm công
+                  {dangDongBoNhanVien && (
+                    <p style={{ fontSize: '0.9rem', color: '#64748b' }}>
+                      Đang đồng bộ dữ liệu nhân viên...
+                    </p>
+                  )}
+                  <button type="submit" className="nut-dang-nhap" disabled={dangDongBoNhanVien}>
+                    {dangDongBoNhanVien ? 'Đang kiểm tra...' : 'Đăng nhập & chấm công'}
                   </button>
                 </form>
               </div>
