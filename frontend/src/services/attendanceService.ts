@@ -122,12 +122,27 @@ type SupabaseAttendanceRecordRow = {
   threshold?: number | null;
 };
 
+const toNumberArray = (input: unknown): number[] => {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((item) => Number(item))
+    .filter((num): num is number => Number.isFinite(num));
+};
+
 const normalizeEmbedding = (value: unknown): number[] => {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => {
-    const num = Number(item);
-    return Number.isFinite(num) ? num : 0;
-  });
+  if (Array.isArray(value)) {
+    return toNumberArray(value);
+  }
+  if (typeof value === 'string' && value.trim().length) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return toNumberArray(parsed);
+    } catch (error) {
+      console.warn('Không parse được embedding dạng chuỗi.', error);
+      return [];
+    }
+  }
+  return [];
 };
 
 const fetchRemoteEmbeddings = async (employeeId?: string) => {

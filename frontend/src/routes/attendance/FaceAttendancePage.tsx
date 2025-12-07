@@ -330,7 +330,7 @@ const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
                 </div>
                 {showHistory && (
                   <div className="mt-4 space-y-4">
-                    <div className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm md:grid-cols-3">
+                    <div className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm md:grid-cols-2">
                       <div className="rounded-xl bg-slate-50 p-3">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Tổng số giờ đã làm
@@ -339,9 +339,15 @@ const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
                       </div>
                       <div className="rounded-xl bg-slate-50 p-3">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Tổng lần chấm công
+                        </p>
+                        <p className="text-2xl font-bold text-slate-900 mt-1">{historyRecords.length}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3 md:col-span-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Tổng tiền lương dự kiến
                         </p>
-                        <p className="text-2xl font-bold text-emerald-600 mt-1">
+                        <p className="text-3xl font-bold text-emerald-600 mt-1 break-words">
                           {salaryInfo.projectedSalary.toLocaleString('vi-VN')}₫
                         </p>
                         <p className="text-[11px] text-slate-500 mt-1">
@@ -351,12 +357,6 @@ const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
                               : 'Đã đủ 40 giờ, hiển thị lương cơ bản'
                             : 'Chưa đủ 40 giờ để nhận lương cơ bản'}
                         </p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Tổng lần chấm công
-                        </p>
-                        <p className="text-2xl font-bold text-slate-900 mt-1">{historyRecords.length}</p>
                       </div>
                     </div>
                     <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
