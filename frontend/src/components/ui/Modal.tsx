@@ -15,10 +15,10 @@ export function Modal({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center">
+    <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
-        className="relative z-50 w-full max-w-md bg-white rounded-lg shadow-lg p-4"
+        className="relative z-50 w-full max-w-md bg-white rounded-lg shadow-lg p-4 max-h-[90vh] overflow-y-auto"
         style={{ color: "#0f172a" }}
       >
         {title && (

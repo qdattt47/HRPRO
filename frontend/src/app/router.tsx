@@ -7,7 +7,7 @@ import LoginPage from "../routes/auth/login";
 const EmployeePage = lazy(() => import("../components/ui/EmployeePage"));
 const DepartmentPage = lazy(() => import("../components/ui/DepartmentPage"));
 const PositionPage = lazy(() => import("../components/ui/PositionPage"));
-const IncomeReportPage = lazy(() => import("../components/ui/IncomeReportPage"));
+const IncomeReportPage = lazy(() => import("../routes/admin/reports/IncomeReport"));
 const FaceAttendancePage = lazy(() => import("../routes/attendance/FaceAttendancePage"));
 const PayrollPage = lazy(() => import("../routes/admin/payroll"));
 

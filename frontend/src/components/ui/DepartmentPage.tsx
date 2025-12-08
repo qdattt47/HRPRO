@@ -182,14 +182,6 @@ export default function DepartmentPage() {
     }, 3000);
   };
 
-  const daoTrangThaiHienThi = (id: string) => {
-    capNhatVaLuuLocal((dsCu) =>
-      dsCu.map((phong) =>
-        phong.id === id ? { ...phong, visible: !phong.visible } : phong
-      )
-    );
-  };
-
   const chonPhongBanSua = (phong: DepartmentViewModel) => {
     capNhatPhongDangSua(phong);
   };
@@ -252,7 +244,6 @@ export default function DepartmentPage() {
           pageCount={Math.max(1, Math.ceil(danhSachDaLoc.length / SO_MUC_MOI_TRANG))}
           onPageChange={capNhatTrangHienTai}
           onDelete={xoaPhongBan}
-          onToggleVisibility={daoTrangThaiHienThi}
           onEdit={chonPhongBanSua}
           onViewEmployees={xemNhanSuPhong}
         />

@@ -14,6 +14,7 @@ export type NewEmployeeData = {
   position: string;
   positionId?: string | null;
   baseSalary: number;
+  level: "STAFF" | "INTERN";
   status: "active" | "inactive";
   photo?: string;
   taiKhoan: string;
@@ -45,6 +46,11 @@ const defaultPositions: StoredPosition[] = [
   { id: "pos-1", tenChucVu: "Nhân viên", maChucVu: "N", visible: true },
   { id: "pos-2", tenChucVu: "Trưởng phòng", maChucVu: "T", visible: true },
   { id: "pos-3", tenChucVu: "Giám đốc", maChucVu: "G", visible: true },
+];
+
+const EMPLOYEE_LEVELS = [
+  { label: "Nhân viên chính thức", value: "STAFF" },
+  { label: "Thực tập sinh", value: "INTERN" },
 ];
 
 const loadCollection = <T,>(key: string, fallback: T[]): T[] => {
@@ -81,6 +87,7 @@ export function AddEmployeeModal({
     position: '',
     positionId: null,
     baseSalary: 0,
+    level: "STAFF",
     status: 'active',
     photo: '',
     taiKhoan: '',
@@ -262,6 +269,23 @@ export function AddEmployeeModal({
                     </option>
                   ))
                 )}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Cấp độ nhân viên
+              </label>
+              <Select
+                name="level"
+                value={formData.level}
+                onChange={handleChange}
+                required
+              >
+                {EMPLOYEE_LEVELS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </Select>
             </div>
             <div>

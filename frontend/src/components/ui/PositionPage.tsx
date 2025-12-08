@@ -15,7 +15,6 @@ export type Position = {
   maChucVu: string;
   tenChucVu: string;
   moTa?: string;
-  capDo?: "ADMIN" | "MANAGER" | "STAFF" | "INTERN" | string;
   quyenHan?: string[];
   trangThai: "active" | "inactive";
   visible: boolean;
@@ -31,21 +30,19 @@ export default function PositionPage() {
   const seed: Position[] = [
     {
       id: "1",
-      maChucVu: "G",
-      tenChucVu: "Giám đốc điều hành",
-      moTa: "Quản lý toàn bộ hoạt động công ty",
-      capDo: "ADMIN",
-      quyenHan: ["Toàn quyền hệ thống", "Duyệt ngân sách"],
+      maChucVu: "NC",
+      tenChucVu: "Nhân viên chính thức",
+      moTa: "Nhân sự chính thức phụ trách vận hành",
+      quyenHan: ["Thêm nhân viên", "Cập nhật hồ sơ"],
       trangThai: "active",
       visible: true,
     },
     {
       id: "2",
-      maChucVu: "T",
-      tenChucVu: "Trưởng phòng",
-      moTa: "Quản lý nhân sự và KPI phòng ban",
-      capDo: "MANAGER",
-      quyenHan: ["Quản lý nhân viên", "Duyệt công", "Xem báo cáo"],
+      maChucVu: "TP",
+      tenChucVu: "Trợ lý/Thực tập",
+      moTa: "Hỗ trợ chuyên viên chính thức",
+      quyenHan: ["Nhập dữ liệu hỗ trợ"],
       trangThai: "active",
       visible: true,
     },
@@ -54,7 +51,6 @@ export default function PositionPage() {
       maChucVu: "N",
       tenChucVu: "Chuyên viên nhân sự",
       moTa: "Quản lý hồ sơ và tuyển dụng",
-      capDo: "STAFF",
       quyenHan: ["Thêm nhân viên", "Cập nhật hồ sơ"],
       trangThai: "active",
       visible: true,
@@ -105,7 +101,6 @@ export default function PositionPage() {
         maChucVu: row.maChucVu,
         tenChucVu: row.tenChucVu,
         moTa: row.moTa ?? previous?.moTa ?? "",
-        capDo: previous?.capDo ?? "STAFF",
         quyenHan: previous?.quyenHan ?? [],
         trangThai: previous?.trangThai ?? "active",
         visible: row.visible,
@@ -180,7 +175,6 @@ export default function PositionPage() {
   const addPosition = async (pos: NewPositionData) => {
     const finalCode = pos.maChucVu || generatePosCode(pos.tenChucVu);
     const baseData = {
-      capDo: pos.capDo,
       quyenHan: pos.quyenHan,
       trangThai: pos.trangThai,
       soNhanSu: 0,
@@ -222,7 +216,14 @@ export default function PositionPage() {
     updatePositions((rows) =>
       rows.map((pos) =>
         pos.id === editingPosition.id
-          ? { ...pos, ...updatedData }
+          ? {
+              ...pos,
+              maChucVu: updatedData.maChucVu,
+              tenChucVu: updatedData.tenChucVu,
+              moTa: updatedData.moTa,
+              quyenHan: [...updatedData.quyenHan],
+              trangThai: updatedData.trangThai,
+            }
           : pos
       )
     );
@@ -230,6 +231,7 @@ export default function PositionPage() {
       const updated = await positionsService.update(editingPosition.id, {
         maChucVu: updatedData.maChucVu,
         tenChucVu: updatedData.tenChucVu,
+        moTa: updatedData.moTa,
       });
       updatePositions((rows) =>
         rows.map((pos) =>
@@ -238,8 +240,9 @@ export default function PositionPage() {
                 ...pos,
                 maChucVu: updated.maChucVu,
                 tenChucVu: updated.tenChucVu,
-                moTa: updated.moTa ?? pos.moTa,
+                moTa: updated.moTa ?? updatedData.moTa,
                 visible: updated.visible,
+                quyenHan: [...updatedData.quyenHan],
                 trangThai: updatedData.trangThai,
               }
             : pos
@@ -270,12 +273,6 @@ export default function PositionPage() {
     setTimeout(() => {
       setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
     }, 3000);
-  };
-
-  const toggleVisibility = (id: string) => {
-    updatePositions((rows) =>
-      rows.map((pos) => (pos.id === id ? { ...pos, visible: !pos.visible } : pos))
-    );
   };
 
   const handleEdit = (position: Position) => {
@@ -333,7 +330,6 @@ export default function PositionPage() {
           pageCount={Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))}
           onPageChange={setPage}
           onDelete={deletePosition}
-          onToggleVisibility={toggleVisibility}
           onEdit={handleEdit}
           onViewEmployees={handleViewEmployees}
         />

@@ -138,6 +138,12 @@ export function EmployeeDetailModal({
             </span>
           </div>
           <div className="flex justify-between">
+            <span className="text-gray-500">Cấp độ</span>
+            <span className="font-medium text-gray-900">
+              {employee.level === "INTERN" ? "Thực tập sinh" : "Nhân viên chính thức"}
+            </span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-gray-500">Lương cơ bản</span>
             <span className="font-semibold text-gray-900">
               {formatMoney(employee.baseSalary)}

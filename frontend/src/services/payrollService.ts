@@ -64,6 +64,22 @@ export const payrollService = {
     }
     return (data as MonthlyPayrollRow[]) ?? [];
   },
+  async removeFuturePayrolls(cutoffYear: number, cutoffMonth?: number) {
+    try {
+      const futureYearResult = await supabase.from('monthly_payrolls').delete().gt('year', cutoffYear);
+      if (futureYearResult.error) throw futureYearResult.error;
+      if (typeof cutoffMonth === 'number') {
+        const futureMonthResult = await supabase
+          .from('monthly_payrolls')
+          .delete()
+          .eq('year', cutoffYear)
+          .gt('month', cutoffMonth);
+        if (futureMonthResult.error) throw futureMonthResult.error;
+      }
+    } catch (error) {
+      console.warn('Không thể xóa dữ liệu lương tương lai.', error);
+    }
+  },
   async fetchYearOverview(year: number, month?: number) {
     let query = supabase
       .from('monthly_payrolls')

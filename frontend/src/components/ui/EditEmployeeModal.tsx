@@ -16,6 +16,7 @@ export type EmployeeEditData = {
   positionId?: string | null;
   photo?: string | null;
   baseSalary: number;
+  level: "STAFF" | "INTERN";
   status: "active" | "inactive";
   taiKhoan: string;
   matKhau: string;
@@ -46,6 +47,11 @@ const defaultPositions: StoredPosition[] = [
   { id: "pos-1", tenChucVu: "Nhân viên", maChucVu: "N", visible: true },
   { id: "pos-2", tenChucVu: "Trưởng phòng", maChucVu: "T", visible: true },
   { id: "pos-3", tenChucVu: "Giám đốc", maChucVu: "G", visible: true },
+];
+
+const EMPLOYEE_LEVELS = [
+  { label: "Nhân viên chính thức", value: "STAFF" },
+  { label: "Thực tập sinh", value: "INTERN" },
 ];
 
 const loadCollection = <T,>(key: string, fallback: T[]): T[] => {
@@ -83,6 +89,7 @@ export function EditEmployeeModal({
     positionId: null,
     photo: null,
     baseSalary: 0,
+    level: "STAFF",
     status: 'active',
     taiKhoan: '',
     matKhau: '',
@@ -102,6 +109,7 @@ export function EditEmployeeModal({
         positionId: employee.positionId ?? null,
         photo: employee.photo ?? null,
         baseSalary: employee.baseSalary,
+        level: employee.level ?? "STAFF",
         code: employee.code,
         status: employee.status,
         taiKhoan: employee.taiKhoan,
@@ -219,6 +227,16 @@ export function EditEmployeeModal({
                 </option>
               ))
             )}
+          </Select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-black mb-2">Cấp độ nhân viên</label>
+          <Select name="level" value={formData.level} onChange={handleChange}>
+            {EMPLOYEE_LEVELS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
         </div>
         <div className="grid gap-4 md:grid-cols-2">

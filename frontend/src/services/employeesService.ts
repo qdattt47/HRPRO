@@ -48,7 +48,7 @@ const resolveRelation = (relation?: RelationRow | RelationRow[] | null) => {
   return Array.isArray(relation) ? relation[0] ?? null : relation;
 };
 
-const toViewModel = (employee: SupabaseEmployeeRow): Employee => {
+const toViewModel = (employee: SupabaseEmployeeRow, previous?: Employee): Employee => {
   const joinOrder = extractJoinOrderFromCode(employee.employee_code) ?? undefined;
   const department = resolveRelation(employee.departments);
   const position = resolveRelation(employee.positions);
@@ -61,6 +61,7 @@ const toViewModel = (employee: SupabaseEmployeeRow): Employee => {
     position: position?.name ?? '',
     positionId: employee.position_id,
     baseSalary: Number(employee.base_salary),
+    level: previous?.level ?? "STAFF",
     status: employee.status,
     visible: true,
     photo: employee.photo_url ?? undefined,
@@ -80,6 +81,7 @@ export const employeesService = {
   saveLocalSnapshot: saveLocal,
   async authenticate(account: string, password: string): Promise<Employee | null> {
     try {
+      const cached = getLocal();
       const { data, error } = await supabase
         .from('employees')
         .select(`
@@ -104,8 +106,11 @@ export const employeesService = {
         .maybeSingle();
       if (error) throw error;
       if (!data) return null;
-      const viewModel = toViewModel(data as SupabaseEmployeeRow);
-      const local = getLocal();
+      const viewModel = toViewModel(
+        data as SupabaseEmployeeRow,
+        cached.find((row) => row.id === (data as SupabaseEmployeeRow).id)
+      );
+      const local = cached;
       const next = [viewModel, ...local.filter((row) => row.id !== viewModel.id)];
       saveLocal(next);
       return viewModel;
@@ -119,6 +124,7 @@ export const employeesService = {
   },
   async list(): Promise<Employee[]> {
     try {
+      const cached = getLocal();
       const { data, error } = await supabase
         .from('employees')
         .select(`
@@ -140,9 +146,11 @@ export const employeesService = {
         `)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      const mapped = (data ?? []).map((row: Record<string, unknown>) =>
-        toViewModel(row as SupabaseEmployeeRow)
-      );
+      const mapped = (data ?? []).map((row: Record<string, unknown>) => {
+        const typed = row as SupabaseEmployeeRow;
+        const previous = cached.find((item) => item.id === typed.id);
+        return toViewModel(typed, previous);
+      });
       saveLocal(mapped);
       return mapped;
     } catch (error) {
@@ -190,7 +198,10 @@ export const employeesService = {
     if (error || !data) {
       throw error ?? new Error('Không thể tạo nhân viên.');
     }
-    const viewModel = toViewModel(data as SupabaseEmployeeRow);
+    const viewModel = {
+      ...toViewModel(data as SupabaseEmployeeRow),
+      level: payload.level,
+    };
     const local = getLocal();
     saveLocal([viewModel, ...local.filter((row) => row.id !== viewModel.id)]);
     return viewModel;
@@ -234,7 +245,10 @@ export const employeesService = {
       if (error || !data) {
         throw error ?? new Error('Không thể cập nhật nhân viên.');
       }
-      const viewModel = toViewModel(data as SupabaseEmployeeRow);
+      const viewModel = {
+        ...toViewModel(data as SupabaseEmployeeRow),
+        level: payload.level,
+      };
       const local = getLocal().map((row) => (row.id === viewModel.id ? viewModel : row));
       saveLocal(local);
       return viewModel;

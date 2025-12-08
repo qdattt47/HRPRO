@@ -1,4 +1,4 @@
-import { Pencil, Eye, Trash2, User } from "lucide-react";
+import { Pencil, Eye, EyeOff, Trash2, User } from "lucide-react";
 import type { Employee } from "./EmployeePage";
 
 export type EmployeeTableProps = Employee;
@@ -12,9 +12,11 @@ type EmployeeTableComponentProps = {
   onDelete: (id: string) => void;
   onEdit?: (employee: EmployeeTableProps) => void;
   onRegisterFace: (employee: EmployeeTableProps) => void;
-  onViewPayroll?: (employee: EmployeeTableProps) => void;
+  onViewPayroll?: (employee: EmployeeTableProps) => Promise<void> | void;
   onViewDetail?: (employee: EmployeeTableProps) => void;
   onViewAttendance?: (employee: EmployeeTableProps) => void;
+  onToggleVisibility?: (id: string) => void;
+  showHidden?: boolean;
   onPageChange: (page: number) => void;
 };
 
@@ -30,9 +32,11 @@ export function EmployeeTable({
   onViewPayroll,
   onViewDetail,
   onViewAttendance,
+  onToggleVisibility,
+  showHidden = false,
   onPageChange,
 }: EmployeeTableComponentProps) {
-  const visibleRows = data.filter((item) => item.visible);
+  const visibleRows = showHidden ? data : data.filter((item) => item.visible);
 
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const endIndex =
@@ -115,7 +119,9 @@ export function EmployeeTable({
             {visibleRows.map((employee) => (
               <tr
                 key={employee.id}
-                className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60"
+                className={`border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 ${
+                  employee.visible ? "" : "bg-slate-50/70"
+                }`}
               >
                 <td className="px-6 py-4">
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -125,9 +131,19 @@ export function EmployeeTable({
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     {renderAvatar(employee)}
-                    <p className="font-semibold text-slate-900">
-                      {employee.name}
-                    </p>
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {employee.name}
+                      </p>
+                      {!employee.visible && (
+                        <p className="text-[11px] font-semibold text-rose-500">
+                          Đang bị ẩn
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-500">
+                        {LEVEL_LABELS[employee.level] ?? "—"}
+                      </p>
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-slate-700">{employee.dept}</td>
@@ -140,7 +156,9 @@ export function EmployeeTable({
                   <div className="flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={() => onViewPayroll && onViewPayroll(employee)}
+                      onClick={() => {
+                        if (onViewPayroll) void onViewPayroll(employee);
+                      }}
                       className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-xs font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
                     >
                       💰 Xem lương
@@ -176,18 +194,22 @@ export function EmployeeTable({
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      title="Xem chi tiết"
-                      onClick={() => onViewDetail && onViewDetail(employee)}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button
                       title="Xoá"
                       onClick={() => onDelete(employee.id)}
                       className="rounded-full border border-red-100 bg-red-50 p-2 text-red-500 shadow-sm transition hover:bg-red-100"
                     >
                       <Trash2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      title={employee.visible ? "Ẩn nhân viên" : "Bỏ ẩn nhân viên"}
+                      onClick={() => onToggleVisibility && onToggleVisibility(employee.id)}
+                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                    >
+                      {employee.visible ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                     <button
                       title="Đăng ký khuôn mặt"
@@ -248,3 +270,7 @@ export function EmployeeTable({
     </div>
   );
 }
+const LEVEL_LABELS: Record<Employee["level"], string> = {
+  STAFF: "Nhân viên chính thức",
+  INTERN: "Thực tập sinh",
+};

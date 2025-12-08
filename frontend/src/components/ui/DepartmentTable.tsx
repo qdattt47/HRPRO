@@ -1,4 +1,4 @@
-import { Pencil, Eye, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 
 export type DepartmentTableProps = {
   id: string;
@@ -20,7 +20,6 @@ type DepartmentTableComponentProps = {
   onPageChange: (page: number) => void;
   onDelete: (id: string) => void;
   onEdit?: (department: DepartmentTableProps) => void;
-  onToggleVisibility: (id: string) => void;
   onViewEmployees?: (department: DepartmentTableProps) => void;
 };
 
@@ -67,10 +66,9 @@ export function DepartmentTable({
   onPageChange,
   onDelete,
   onEdit,
-  onToggleVisibility,
   onViewEmployees,
 }: DepartmentTableComponentProps) {
-  const visibleRows = data.filter((item) => item.visible);
+  const visibleRows = data;
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const endIndex =
     totalCount === 0 ? 0 : Math.min(page * pageSize, totalCount);
@@ -198,13 +196,6 @@ export function DepartmentTable({
                       className="rounded-full border border-blue-100 bg-blue-50 p-2 text-blue-600 shadow-sm transition hover:bg-blue-100"
                     >
                       <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      title="Ẩn/hiện"
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                      onClick={() => onToggleVisibility(dept.id)}
-                    >
-                      <Eye className="h-4 w-4" />
                     </button>
                     <button
                       title="Xoá"

@@ -8,7 +8,7 @@ export type AttendanceEvent = {
 const HISTORY_KEY = (employeeId: string) => `attendanceHistory:${employeeId}`;
 export const HISTORY_LIMIT = 200;
 
-export const SIMULATION_RATIO = 3600 / 5; // 5 giây = 1 giờ chấm công
+export const SIMULATION_RATIO = 1; // giữ nguyên theo thời gian thực
 const LUNCH_BREAK_HOURS = 1;
 
 export const calculateSimulatedHours = (inTime: Date, outTime: Date) => {
@@ -104,4 +104,58 @@ export const appendLocalAttendanceRecord = (
     current.splice(0, current.length - HISTORY_LIMIT);
   }
   localStorage.setItem(HISTORY_KEY(employeeId), JSON.stringify(current));
+};
+
+export const resolveAttendanceReferenceDate = (
+  records: AttendanceEvent[],
+  fallback: Date = new Date()
+) => {
+  if (!records.length) return fallback;
+  const latest = [...records].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )[0];
+  const parsed = new Date(latest.timestamp);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+type AttendanceSummarySnapshot = {
+  year: number;
+  month: number; // 1-12
+  hours: number;
+  updatedAt: string;
+};
+
+const ATTENDANCE_SUMMARY_KEY = (employeeId: string) => `attendanceSummary:${employeeId}`;
+
+export const loadAttendanceSummary = (employeeId: string): AttendanceSummarySnapshot | null => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(ATTENDANCE_SUMMARY_KEY(employeeId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.year === 'number' &&
+      typeof parsed.month === 'number' &&
+      typeof parsed.hours === 'number'
+    ) {
+      return parsed as AttendanceSummarySnapshot;
+    }
+  } catch (error) {
+    console.warn('Không đọc được attendanceSummary:', error);
+  }
+  return null;
+};
+
+export const saveAttendanceSummary = (
+  employeeId: string,
+  snapshot: AttendanceSummarySnapshot
+) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(ATTENDANCE_SUMMARY_KEY(employeeId), JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn('Không thể lưu attendanceSummary:', error);
+  }
 };

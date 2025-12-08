@@ -14,6 +14,8 @@ import {
   summarizeAttendanceRecords,
   calculateSalaryProjection,
   calculateSimulatedHours,
+  resolveAttendanceReferenceDate,
+  saveAttendanceSummary,
   type AttendanceEvent,
 } from '../../lib/attendanceHistory';
 
@@ -57,20 +59,26 @@ const FaceAttendancePage = () => {
   const [monthlyHours, setMonthlyHours] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
   const refreshAttendanceData = useCallback(async (target: Employee, salaryInput?: number) => {
-    const referenceDate = new Date();
     try {
       const remoteRecords = await attendanceService.fetchAttendanceHistory(target.id);
       if (remoteRecords.length) {
-        const summary = summarizeAttendanceRecords(remoteRecords, referenceDate);
+        const remoteReference = resolveAttendanceReferenceDate(remoteRecords, new Date());
+        const summary = summarizeAttendanceRecords(remoteRecords, remoteReference);
         setHistoryRecords(summary.history);
         setMonthlyHours(summary.monthlyHours);
+        saveAttendanceSummary(target.id, {
+          year: remoteReference.getFullYear(),
+          month: remoteReference.getMonth() + 1,
+          hours: summary.monthlyHours,
+          updatedAt: new Date().toISOString(),
+        });
         const baseValue = salaryInput ?? target.baseSalary ?? 0;
         if (baseValue > 0) {
           const payroll = calculateSalaryProjection(summary.monthlyHours, baseValue);
           void payrollService.upsertMonthlySummary({
             employeeId: target.id,
-            year: referenceDate.getFullYear(),
-            month: referenceDate.getMonth() + 1,
+            year: remoteReference.getFullYear(),
+            month: remoteReference.getMonth() + 1,
             totalHours: summary.monthlyHours,
             overtimeHours: payroll.overtimeHours,
             baseSalary: baseValue,
@@ -85,16 +93,23 @@ const FaceAttendancePage = () => {
       console.warn('Không tải được lịch sử chấm công từ Supabase.', error);
     }
     const localRecords = loadLocalAttendanceHistory(target.id);
-    const summary = summarizeAttendanceRecords(localRecords, referenceDate);
+    const localReference = resolveAttendanceReferenceDate(localRecords, new Date());
+    const summary = summarizeAttendanceRecords(localRecords, localReference);
     setHistoryRecords(summary.history);
     setMonthlyHours(summary.monthlyHours);
+    saveAttendanceSummary(target.id, {
+      year: localReference.getFullYear(),
+      month: localReference.getMonth() + 1,
+      hours: summary.monthlyHours,
+      updatedAt: new Date().toISOString(),
+    });
     const fallbackSalary = salaryInput ?? target.baseSalary ?? 0;
     if (fallbackSalary > 0) {
       const payroll = calculateSalaryProjection(summary.monthlyHours, fallbackSalary);
       void payrollService.upsertMonthlySummary({
         employeeId: target.id,
-        year: referenceDate.getFullYear(),
-        month: referenceDate.getMonth() + 1,
+        year: localReference.getFullYear(),
+        month: localReference.getMonth() + 1,
         totalHours: summary.monthlyHours,
         overtimeHours: payroll.overtimeHours,
         baseSalary: fallbackSalary,

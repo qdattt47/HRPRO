@@ -10,15 +10,7 @@ type PositionTableProps = {
   onPageChange: (page: number) => void;
   onDelete: (id: string) => void;
   onEdit?: (position: Position) => void;
-  onToggleVisibility: (id: string) => void;
   onViewEmployees?: (position: Position) => void;
-};
-
-const levelColors: Record<string, string> = {
-  ADMIN: "bg-red-100 text-red-600",
-  MANAGER: "bg-purple-100 text-purple-600",
-  STAFF: "bg-blue-100 text-blue-600",
-  INTERN: "bg-emerald-100 text-emerald-600",
 };
 
 export function PositionTable({
@@ -30,7 +22,6 @@ export function PositionTable({
   onPageChange,
   onDelete,
   onEdit,
-  onToggleVisibility,
   onViewEmployees,
 }: PositionTableProps) {
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -83,15 +74,6 @@ export function PositionTable({
                   <p className="text-sm text-slate-700">
                     {position.moTa || "Mô tả đang cập nhật"}
                   </p>
-                  {position.capDo && (
-                    <span
-                      className={`mt-2 inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full ${
-                        levelColors[position.capDo] || "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {position.capDo}
-                    </span>
-                  )}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex flex-wrap gap-2">
@@ -151,13 +133,6 @@ export function PositionTable({
                       className="rounded-full border border-blue-100 bg-blue-50 p-2 text-blue-600 shadow-sm transition hover:bg-blue-100"
                     >
                       <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      title={position.visible ? "Ẩn" : "Hiện"}
-                      onClick={() => onToggleVisibility(position.id)}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                    >
-                      👁️
                     </button>
                     <button
                       title="Xoá"

@@ -1,50 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import type { Employee } from "./EmployeePage";
-
-type AttendanceHistoryRecord = {
-  id: string;
-  type: "checkin" | "checkout";
-  timestamp: string;
-  durationHours?: number;
-};
-
-const loadHistory = (employeeId: string): AttendanceHistoryRecord[] => {
-  if (typeof window === "undefined") return [];
-  const key = `attendanceHistory:${employeeId}`;
-  const raw = localStorage.getItem(key);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed as AttendanceHistoryRecord[];
-    }
-  } catch (error) {
-    console.warn("Không đọc được attendanceHistory:", error);
-  }
-  return [];
-};
-
-const getMonthlyHours = (employeeId: string): number => {
-  if (typeof window === "undefined") return 0;
-  const raw = localStorage.getItem(`workingHours:${employeeId}`);
-  if (!raw) return 0;
-  try {
-    const parsed = JSON.parse(raw) as { year: number; month: number; hours: number };
-    const now = new Date();
-    if (
-      parsed &&
-      parsed.year === now.getFullYear() &&
-      parsed.month === now.getMonth() + 1 &&
-      typeof parsed.hours === "number"
-    ) {
-      return Number(parsed.hours) || 0;
-    }
-  } catch (error) {
-    console.warn("Không đọc được dữ liệu workingHours:", error);
-  }
-  return 0;
-};
+import { attendanceService } from "../../services/attendanceService";
+import {
+  loadLocalAttendanceHistory,
+  summarizeAttendanceRecords,
+  resolveAttendanceReferenceDate,
+  loadAttendanceSummary,
+  saveAttendanceSummary,
+  type AttendanceEvent,
+} from "../../lib/attendanceHistory";
 
 export function AttendanceHistoryModal({
   open,
@@ -55,26 +20,78 @@ export function AttendanceHistoryModal({
   onClose: () => void;
   employee: Employee | null;
 }) {
-  const [records, setRecords] = useState<AttendanceHistoryRecord[]>([]);
+  const [records, setRecords] = useState<AttendanceEvent[]>([]);
+  const [monthlyHours, setMonthlyHours] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [dataSource, setDataSource] = useState<"remote" | "local">("local");
+  const [referenceContext, setReferenceContext] = useState<{ year: number; month: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!employee) return;
+    const cached = loadAttendanceSummary(employee.id);
+    if (cached) {
+      setMonthlyHours(cached.hours);
+      setReferenceContext({ year: cached.year, month: cached.month });
+    } else {
+      setMonthlyHours(0);
+      setReferenceContext(null);
+    }
+  }, [employee]);
 
   useEffect(() => {
     if (!open || !employee) return;
-    const history = loadHistory(employee.id);
-    setRecords(history);
+    let active = true;
+
+    const applySummary = (events: AttendanceEvent[], source: "remote" | "local") => {
+      const reference = resolveAttendanceReferenceDate(events, new Date());
+      const summary = summarizeAttendanceRecords(events, reference);
+      if (!active) return;
+      setRecords(summary.history);
+      setMonthlyHours(summary.monthlyHours);
+      setReferenceContext({ year: reference.getFullYear(), month: reference.getMonth() + 1 });
+      saveAttendanceSummary(employee.id, {
+        year: reference.getFullYear(),
+        month: reference.getMonth() + 1,
+        hours: summary.monthlyHours,
+        updatedAt: new Date().toISOString(),
+      });
+      setDataSource(source);
+    };
+
+    const loadHistory = async () => {
+      setLoading(true);
+      try {
+        const remoteRecords = await attendanceService.fetchAttendanceHistory(employee.id);
+        if (remoteRecords.length) {
+          applySummary(remoteRecords, "remote");
+          return;
+        }
+      } catch (error) {
+        console.warn("Không tải được lịch sử chấm công của nhân viên.", error);
+      }
+      const localRecords = loadLocalAttendanceHistory(employee.id);
+      applySummary(localRecords, "local");
+    };
+
+    void loadHistory();
+
+    return () => {
+      active = false;
+    };
   }, [open, employee]);
 
-  const monthlyHours = useMemo(() => (employee ? getMonthlyHours(employee.id) : 0), [employee]);
   const currentMonthCount = useMemo(() => {
-    if (!records.length) return 0;
-    const now = new Date();
+    if (!records.length || !referenceContext) return 0;
     return records.filter((record) => {
       const time = new Date(record.timestamp);
       return (
-        time.getFullYear() === now.getFullYear() &&
-        time.getMonth() === now.getMonth()
+        time.getFullYear() === referenceContext.year &&
+        time.getMonth() === referenceContext.month - 1
       );
     }).length;
-  }, [records]);
+  }, [records, referenceContext]);
 
   if (!employee) return null;
 
@@ -99,16 +116,20 @@ export function AttendanceHistoryModal({
       <div className="space-y-5">
         <div className="rounded-2xl bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Tổng giờ tháng này
+            {referenceContext
+              ? `Tổng giờ tháng ${referenceContext.month}/${referenceContext.year}`
+              : "Tổng giờ tháng này"}
           </p>
           <p className="mt-2 text-3xl font-bold text-slate-900">{monthlyHours.toFixed(2)}h</p>
           <p className="text-sm text-slate-500">
             Số lần chấm công trong tháng: {currentMonthCount}
+            {dataSource === "remote" ? "" : " • Dữ liệu trên thiết bị"}
           </p>
         </div>
-
         <div>
-          <p className="text-sm font-semibold text-slate-700 mb-3">Lịch sử gần đây</p>
+          <p className="text-sm font-semibold text-slate-700 mb-3">
+            {loading ? "Đang tải lịch sử..." : "Lịch sử gần đây"}
+          </p>
           {orderedRecords.length === 0 ? (
             <p className="text-sm text-slate-500">Chưa có dữ liệu chấm công.</p>
           ) : (

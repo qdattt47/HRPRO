@@ -9,17 +9,9 @@ export type NewPositionData = {
   maChucVu: string;
   tenChucVu: string;
   moTa: string;
-  capDo: "ADMIN" | "MANAGER" | "STAFF" | "INTERN";
   quyenHan: string[];
   trangThai: "active" | "inactive";
 };
-
-const capDoOptions = [
-  { label: "Admin", value: "ADMIN" },
-  { label: "Manager", value: "MANAGER" },
-  { label: "Staff", value: "STAFF" },
-  { label: "Intern", value: "INTERN" },
-];
 
 export function AddPositionModal({
   open,
@@ -34,7 +26,6 @@ export function AddPositionModal({
     maChucVu: "",
     tenChucVu: "",
     moTa: "",
-    capDo: "STAFF",
     quyenHan: [],
     trangThai: "active",
   });
@@ -46,7 +37,6 @@ export function AddPositionModal({
         maChucVu: "",
         tenChucVu: "",
         moTa: "",
-        capDo: "STAFF",
         quyenHan: [],
         trangThai: "active",
       });
@@ -135,7 +125,7 @@ export function AddPositionModal({
 
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-3">
-            Mô tả & cấp độ
+            Mô tả
           </p>
           <div className="space-y-4">
             <div>
@@ -150,23 +140,6 @@ export function AddPositionModal({
                 rows={3}
                 placeholder="Mô tả ngắn về nhiệm vụ của chức vụ này..."
               />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-black mb-2">
-                Cấp độ
-              </label>
-              <Select
-                name="capDo"
-                value={formData.capDo}
-                onChange={handleChange}
-                className="rounded-2xl border-slate-200 bg-white py-3 text-sm text-slate-600"
-              >
-                {capDoOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
             </div>
           </div>
         </div>

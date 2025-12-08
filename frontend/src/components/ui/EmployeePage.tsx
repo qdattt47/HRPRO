@@ -15,6 +15,7 @@ import { buildEmployeeCode, getNextJoinOrder, loadStoredDepartments, loadStoredP
 import { employeesService } from "../../services/employeesService";
 import { departmentsService } from "../../services/departmentsService";
 import { positionsService } from "../../services/positionsService";
+import { payrollService } from "../../services/payrollService";
 
 export type Employee = {
   id: string;
@@ -25,6 +26,7 @@ export type Employee = {
   position: string;
   positionId?: string | null;
   baseSalary: number;
+  level: "STAFF" | "INTERN";
   status: "active" | "inactive";
   visible: boolean;
   photo?: string;
@@ -57,6 +59,7 @@ export default function EmployeePage() {
       position: "Nhân viên",
       positionId: "pos-1",
       baseSalary: 10000000,
+      level: "STAFF",
       status: "active",
       visible: true,
       photo: "https://i.pravatar.cc/150?img=3",
@@ -78,6 +81,7 @@ export default function EmployeePage() {
       position: "Trưởng phòng",
       positionId: "pos-2",
       baseSalary: 20000000,
+      level: "STAFF",
       status: "active",
       visible: true,
       photo: "https://i.pravatar.cc/150?img=15",
@@ -99,6 +103,7 @@ export default function EmployeePage() {
       position: "Nhân viên",
       positionId: "pos-1",
       baseSalary: 12000000,
+      level: "INTERN",
       status: "inactive",
       visible: true,
       photo: "https://i.pravatar.cc/150?img=32",
@@ -160,6 +165,7 @@ export default function EmployeePage() {
         position: emp.position ?? posRecord?.tenChucVu ?? "",
         positionId: emp.positionId ?? posRecord?.id ?? null,
         baseSalary: resolvedBaseSalary,
+        level: (emp.level as Employee["level"]) ?? "STAFF",
         status: (emp.status as Employee["status"]) ?? "active",
         visible: typeof emp.visible === "boolean" ? emp.visible : true,
         photo: emp.photo as string | undefined,
@@ -198,6 +204,7 @@ export default function EmployeePage() {
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
   const [faceEmployee, setFaceEmployee] = useState<Employee | null>(null);
   const [attendanceEmployee, setAttendanceEmployee] = useState<Employee | null>(null);
+  const [showHiddenEmployees, setShowHiddenEmployees] = useState(false);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -224,14 +231,15 @@ export default function EmployeePage() {
   }, []);
 
   const filtered = useMemo(() => {
-    return data.filter((d) => {
+    const matches = data.filter((d) => {
       if (dept !== "all" && d.dept !== dept) return false;
       if (status !== "all" && d.status !== status) return false;
       if (q && !(d.name.toLowerCase().includes(q.toLowerCase())))
         return false;
       return true;
     });
-  }, [data, q, dept, status]);
+    return showHiddenEmployees ? matches : matches.filter((emp) => emp.visible);
+  }, [data, q, dept, status, showHiddenEmployees]);
 
   useEffect(() => {
     const maxPage = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -295,6 +303,7 @@ export default function EmployeePage() {
       departmentId: resolvedDeptId,
       positionId: resolvedPosId,
       baseSalary: emp.baseSalary,
+      level: emp.level,
       joinOrder,
       joinedAt: new Date(emp.joinedAt).toISOString(),
       visible: true,
@@ -368,6 +377,7 @@ export default function EmployeePage() {
           position: updatedData.position,
           positionId: resolvedPosId,
           baseSalary: updatedData.baseSalary,
+          level: updatedData.level,
           status: updatedData.status,
           taiKhoan: updatedData.taiKhoan,
           matKhau: resolvedPassword,
@@ -422,31 +432,57 @@ export default function EmployeePage() {
     setAttendanceEmployee(employee);
   };
 
-  const handleViewPayroll = (employee: Employee) => {
-    const workingHours = localStorage.getItem(`workingHours:${employee.id}`);
-    let monthlyHours = "0";
+  const toggleEmployeeVisibility = (employeeId: string) => {
+    setData((current) => {
+      const next = current.map((emp) =>
+        emp.id === employeeId ? { ...emp, visible: !emp.visible } : emp
+      );
+      employeesService.saveLocalSnapshot(next);
+      return next;
+    });
+    showToast("Đã cập nhật trạng thái hiển thị nhân viên");
+  };
 
-    if (workingHours) {
-      try {
-        const parsed = JSON.parse(workingHours) as {
-          year: number;
-          month: number;
-          hours: number;
-        };
-        const now = new Date();
-        const currentMonth = now.getMonth() + 1;
-        const currentYear = now.getFullYear();
-        if (
-          parsed &&
-          parsed.year === currentYear &&
-          parsed.month === currentMonth &&
-          typeof parsed.hours === "number"
-        ) {
-          monthlyHours = String(parsed.hours);
-        }
-      } catch (error) {
-        console.warn("Không đọc được dữ liệu workingHours:", error);
+  const getLocalMonthlyHours = (employeeId: string) => {
+    const workingHours = localStorage.getItem(`workingHours:${employeeId}`);
+    if (!workingHours) return "0";
+    try {
+      const parsed = JSON.parse(workingHours) as {
+        year: number;
+        month: number;
+        hours: number;
+      };
+      const now = new Date();
+      if (
+        parsed &&
+        parsed.year === now.getFullYear() &&
+        parsed.month === now.getMonth() + 1 &&
+        typeof parsed.hours === "number"
+      ) {
+        return String(parsed.hours);
       }
+    } catch (error) {
+      console.warn("Không đọc được dữ liệu workingHours:", error);
+    }
+    return "0";
+  };
+
+  const handleViewPayroll = async (employee: Employee) => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    let monthlyHours = getLocalMonthlyHours(employee.id);
+    let salaryValue = employee.baseSalary;
+
+    try {
+      const payrollRows = await payrollService.fetchMonthlyPayrolls(employee.id, currentYear);
+      const currentRecord = payrollRows.find((row) => row.month === currentMonth);
+      if (currentRecord) {
+        monthlyHours = String(currentRecord.total_hours ?? 0);
+        salaryValue = currentRecord.base_salary ?? salaryValue;
+      }
+    } catch (error) {
+      console.warn("Không lấy được dữ liệu lương từ Supabase.", error);
     }
 
     const query = new URLSearchParams({
@@ -455,7 +491,7 @@ export default function EmployeePage() {
       name: employee.name,
       dept: employee.dept,
       position: employee.position,
-      salary: String(employee.baseSalary),
+      salary: String(salaryValue ?? 0),
       hours: monthlyHours,
     });
     navigate(`/admin/payroll?${query.toString()}`);
@@ -502,6 +538,15 @@ export default function EmployeePage() {
               status={status}
               onStatusChange={handleStatusChange}
             />
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowHiddenEmployees((prev) => !prev)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+              >
+                {showHiddenEmployees ? "Ẩn danh sách bị ẩn" : "Hiện cả nhân viên đã ẩn"}
+              </button>
+            </div>
           </div>
 
           <div className="mt-6">
@@ -520,6 +565,8 @@ export default function EmployeePage() {
           onViewPayroll={handleViewPayroll}
           onViewDetail={handleViewDetail}
           onViewAttendance={handleViewAttendance}
+          onToggleVisibility={toggleEmployeeVisibility}
+          showHidden={showHiddenEmployees}
         />
           </div>
         </div>
